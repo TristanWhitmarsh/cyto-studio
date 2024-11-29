@@ -53,7 +53,7 @@ The ncyto-studio viewer can be run from command line by typing:
 
 
 <p float="left">
-<img src="./cyto-studio.jpg" width="100%"/>
+<img src="https://github.com/TristanWhitmarsh/cyto-studio/blob/main/cyto-studio.jpg" width="100%"/>
 </p>
 
 
