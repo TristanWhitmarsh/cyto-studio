@@ -1,0 +1,360 @@
+.QMenuBar {
+    background: qlineargradient(
+        x1: 0, y1: 0,
+        x2: 1, y2: 0,
+        stop: 0 #FFED00,    /* Yellow */
+        stop: 0.33 #FF2D31, /* Red */
+        stop: 0.66 #CD65D3, /* Purple */
+        stop: 1 #05D8FC     /* Light blue */
+    );
+    color: black;          /* This sets the text color */
+}
+
+
+
+
+/* Status bar and its elements */
+QStatusBar {
+    background-color: transparent;
+    border: none;
+}
+
+QStatusBar::item {
+    background-color: transparent;
+    border: none;
+}
+
+QStatusBar QLabel {
+    background-color: transparent;
+    border: none;
+}
+
+
+.QWidget {
+    background-color: #15191F;
+}
+
+QWidget#container {
+    background-color: #15191F;
+}
+
+QMainWindow {
+    background-color: #15191F;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+}
+
+QMainWindow {
+    background-color: #15191F;
+    border: none;
+}
+
+QMenuBar {
+    background-color: #15191F;
+    spacing: 3px;
+    padding: 2px;
+    border: none;
+}
+
+QMenuBar::item {
+    background: transparent;
+    padding: 4px 12px;
+    border-radius: 4px;
+}
+
+QMenuBar::item:selected, QMenuBar::item:pressed {
+    background: #8B8BE1;
+    color: #000000;
+}
+
+QMenu {
+    background-color: #15191F;
+    border: 1px solid #15191F;
+    padding: 5px;
+}
+
+QMenu::item {
+    padding: 5px 30px 5px 30px;
+    border-radius: 3px;
+}
+
+QMenu::item:selected {
+    background-color: #8B8BE1;
+    color: #000000;
+}
+
+QtLayerList, QtLayerButtons, QtViewerButtons {
+    background-color: #15191F;
+    min-width: 242px;
+    padding: 4px;
+    border: none;
+}
+
+QtLayerWidget {
+    padding: 0px;
+    background-color: #15191F;
+    border-radius: 2px;
+    min-height: 32px;
+    max-height: 32px;
+    min-width: 228px;
+    border: none;
+}
+
+QtLayerWidget[selected="true"] {
+    background-color: #8B8BE1;
+    color: #000000;
+}
+
+QtLayerWidget:hover {
+    background-color: #393982;
+}
+
+QtListView::item:hover {
+    background-color: #393982;
+}
+
+/* Dock widget styling */
+QDockWidget {
+    background-color: #15191F;
+    border: none;
+}
+
+QDockWidget::title {
+    background: #15191F;
+    border: none;
+}
+
+/* Dock Widget title bar styling */
+#QtCustomTitleBar {
+    background-color: #15191F;
+    border: none;
+}
+
+#QtCustomTitleBarLine {
+    background-color: #15191F;
+}
+
+/* Handle styling */
+QMainWindow::separator {
+    background-color: #15191F;
+    width: 4px;
+    height: 4px;
+    border: none;
+}
+
+QMainWindow::separator:hover {
+    background: #393982;
+}
+
+QSplitter::handle {
+    background-color: #05D8FC;
+    border: none;
+}
+
+QSplitter::handle:hover {
+    background-color: #393982;
+}
+
+/* Size grip (resize handle) styling */
+QSizeGrip {
+    background-color: #15191F;
+    border: none;
+}
+
+QDockWidget > QWidget {
+    background-color: #15191F;
+    border: none;
+}
+
+QDockWidget > * {
+    background-color: #15191F;
+    border: none;
+}
+
+QtViewer {
+    background-color: #15191F;
+    border: none;
+}
+
+QScrollArea, 
+QScrollArea > QWidget,
+QScrollArea > QWidget > QWidget {
+    background-color: #15191F;
+    border: none;
+}
+
+QFrame {
+    background-color: #15191F;
+    border: none;
+}
+
+/* Additional border controls */
+QTabBar::tab {
+    border: none;
+    background: #15191F;
+}
+
+QTabWidget::pane {
+    border: none;
+    background: #15191F;
+}
+
+QWidget {
+    border: none;
+}
+
+QMainWindow::separator:vertical,
+QMainWindow::separator:horizontal {
+    border: none;
+    background: #15191F;
+}
+
+QtCustomTitleBar {
+    border: none;
+    background: #15191F;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #15191F;
+    margin: 5px 0px;
+}
+
+/* Scroll bar styling 
+QScrollBar {
+    background-color: #000000;
+    border: none;
+}
+*/
+QScrollBar::handle {
+    background-color: #05D8FC;
+    border: none;
+}
+
+QScrollBar::add-line,
+QScrollBar::sub-line {
+    border: none;
+    background: #15191F;
+}
+
+QGroupBox {
+    background-color: #15191F;
+    border: none;
+    border: 1px solid #B3B3B3;  /* Sets a red outline */
+    border-radius: 5px;        /* Optional: Sets rounded corners */
+}
+
+QGroupBox::title {
+    background-color: #15191F;  /* Sets a yellow background for the title */
+    subcontrol-origin: margin;  /* Ensures the background affects only the title */
+}
+
+/* Add these tab-specific styles to your existing stylesheet */
+
+QTabBar {
+    background-color: #000000;
+    border: none;
+}
+
+QTabBar::tab {
+    background-color: #15191F;
+    color: #B3B3B3;  /* text color */
+    padding: 6px 12px;
+    margin: 1px;
+    border: none;
+    border-radius: 2px;
+}
+
+QTabBar::tab:selected {
+    background-color: #8B8BE1;
+    color: #000000;
+}
+
+QTabBar::tab:hover {
+    background-color: #393982;
+}
+
+QTabWidget {
+    background-color: #000000;
+    border: none;
+}
+
+QTabWidget::pane {
+    background-color: #000000;
+    border: none;
+}
+
+QTabWidget::tab-bar {
+    background-color: #000000;
+    alignment: left;
+}
+
+QTabWidget::pane {
+    background-color: #000000;
+    border: none;
+    padding: 0px;
+}
+
+
+
+QtWelcomeWidget {
+    background-color: #000000;
+}
+
+QtWelcomeWidget[drag=false] {
+    background-color: #000000;
+}
+
+QtWelcomeWidget[drag=true] {
+    background-color: #000000;
+}
+
+/* If you want to keep the text visible */
+QtWelcomeLabel {
+    background: transparent;
+    background-color: #000000;
+    color: #B3B3B3;  /* or whatever color you want for the text */
+}
+
+/* Central widget and its container */
+QMainWindow::central-widget {
+    background-color: #000000;
+    border: none;
+}
+
+QWidget#centralWidget {
+    background-color: #000000;
+    border: none;
+}
+
+
+
+/* Targeting layer controls text */
+QtLayerControlsContainer QLabel,
+QtLayerControlsContainer QLineEdit,
+QtLayerControlsContainer QTextEdit,
+QtLayerControlsContainer QPlainTextEdit,
+QtLayerControlsContainer QComboBox {
+    background-color: transparent;
+}
+
+QtLayerWidget QLabel,
+QtLayerWidget QLineEdit,
+QtLayerWidget QTextEdit,
+QtLayerWidget QPlainTextEdit,
+QtLayerWidget QComboBox {
+    background-color: transparent;
+}
+
+/* Optional: Ensure text remains visible */
+QtLayerWidget QLabel,
+QtLayerControlsContainer QLabel {
+    color: {{ text }};  /* Replace {{ text }} with your desired text color */
+}
+
+QLineEdit {
+    border: 1px solid #B3B3B3;  /* Creates a 1px solid black border around the QLineEdit */
+    border-radius: 4px;        /* Optional: Adds rounded corners */
+    padding: 1px;             /* Optional: Adds padding inside the border */
+}
