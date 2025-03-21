@@ -1,5 +1,5 @@
 # cyto-studio
-A napari viewer which reads stpt images as zarr files.
+A napari viewer which reads multiplex images.
 
 ## Installation Windows
 
@@ -24,14 +24,14 @@ Type:
 
 ## How to run
 
-The ncyto-studio viewer can be run from command line by typing:
+The cyto-studio viewer can be run from command line by typing:
 
     >cyto-studio
     
 
 ## How to use
 
-1. If working within the IMAXT Windows VMware or Linux remote desktop, the Data folder containing the STPT images will have been automatically selected (windows server: N:/stpt/; linux: /data/meds1_c/storage/processed/stpt). If not, please select the location of the folders with STPT Zarr files using the "Set folder" button.
+1. If working within the IMAXT Windows VMware or Linux remote desktop, the Data folder containing the STPT images will have been automatically selected. If not, please select the location of the folders with STPT Zarr files using the "Set folder" button.
 2. The dropdown box should now have all the available STPT images.
 3. Select the image file from the dropdown box.
     
@@ -53,7 +53,7 @@ The ncyto-studio viewer can be run from command line by typing:
 
 
 <p float="left">
-<img src="https://github.com/TristanWhitmarsh/cyto-studio/blob/main/cyto-studio.jpg" width="100%"/>
+<img src="https://raw.githubusercontent.com/TristanWhitmarsh/cyto-studio/main/cyto-studio.jpg" width="100%"/>
 </p>
 
 

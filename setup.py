@@ -16,8 +16,8 @@ with open(os.path.join(HERE, "README.md")) as fid:
 # This call to setup() does all the work
 setup(
     name="cyto-studio",
-    version="0.1.0",
-    description="napari viewer which can read stpt, axio and imc images as zarr files",
+    version="0.1.2",
+    description="napari viewer which can read multiplex images as zarr files",
     long_description=README,
     long_description_content_type="text/markdown",
     url="https://github.com/TristanWhitmarsh/cyto-studio",

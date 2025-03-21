@@ -160,6 +160,7 @@ class CYTOSTUDIO:
         self.m_slice_spacing = None
         self.slice_spacing = None
         self.shapeText = None
+        self.m_optical_sections = None
         
         self.default_contrast_limits = None
         self.channels_start_at_0 = None
@@ -1202,9 +1203,9 @@ class CYTOSTUDIO:
         file_list = []
         
         folder = str(QtWidgets.QFileDialog.getExistingDirectory())
-        print(folder)
+        
         folder = folder
-        print(folder)
+        
         self.image_folder = folder
         print(self.image_folder)
         self.search_folder = QtWidgets.QLineEdit(folder)
@@ -1233,20 +1234,19 @@ class CYTOSTUDIO:
                 self.old_method = False
                 self.axio = True
                 self.image_folders = [
-                    folder,
                     '/storage/imaxt.processed.2021/axio/',
                     '/storage/imaxt.processed.2022/axio/',
                     '/storage/processed.2021/axio/',
                     '/storage/processed.2022/axio/',
                     '/storage/imaxt/atefeh/processed/stpt/',
                     '/storage/imaxt/eglez/processed/stpt/',
+                    folder,
                 ]
                 print("setting axio method")
             else:
                 self.old_method = False
                 self.axio = False
                 self.image_folders = [
-                    folder,
                     '/storage/processed.2021/stpt/',
                     '/storage/processed.2022/stpt/',
                     '/storage/processed/stpt/',
@@ -1255,11 +1255,14 @@ class CYTOSTUDIO:
                     '/data/meds1_c/storage/processed0/stpt/',
                     '/storage/imaxt/atefeh/processed/stpt/',
                     '/Storage/imaxt/eglez/processed/stpt/',
-                    '/storage/imaxt/imaxt_zarr_imc/'
+                    '/storage/imaxt/imaxt_zarr_imc/',
+                    folder,
                 ]
                 print("setting STPT method")   
             
             print(self.image_folders)
+        
+        print(self.image_folder)
         
     def MethodChanged(self):
 
@@ -1338,7 +1341,7 @@ class CYTOSTUDIO:
         self.comboBoxPath.clear()
         for i in file_list:
             self.comboBoxPath.addItem(i)
-
+        self.on_combobox_changed()
             
     def extract_um_number(self, filename):
         # This regex looks for a pattern where a number is followed by 'x', another number, and 'um'
@@ -1379,8 +1382,7 @@ class CYTOSTUDIO:
                 self.channels_start = 1
                 break
                 
-                     
-        
+            
         slice_spacing = self.extract_um_number(str(self.comboBoxPath.currentText()))
         self.m_slice_spacing.setText(str(slice_spacing))
         
@@ -1599,7 +1601,9 @@ class CYTOSTUDIO:
         self.viewer.layers.select_all()  # Select all layers
         self.viewer.layers.remove_selected()  # Remove selected layers (which are all layers)
         
-        self.selected_channels = self.comboBox.getCheckedItems()  
+        self.selected_channels = self.comboBox.getCheckedItems()
+        
+        print(f"Loading from folder -------------------------  {self.image_folder}")
         
         self.optical_slices_available, self.value_range, self.shape, self.slice_spacing, self.optical_slices, self.output_resolution = self.data.Load3D(self.viewer, self.image_folder, self.comboBoxPath.currentText(), self.selected_channels, self.default_contrast_limits, self.thresholdN, self.channels_start, self.axio, self.old_method, self.overall_brightness, self.scroll, self.scroll_overall_brightness, self.pixel_size.text(), self.m_slice_spacing.text(), self.start_slice.text(), self.end_slice.text(), self.crop, self.crop_start_x, self.crop_end_x, self.crop_start_y, self.crop_end_y)
         
@@ -1795,6 +1799,33 @@ class CYTOSTUDIO:
         
         layout.addLayout(vbox)
         
+        
+        
+        
+        
+        
+        
+        hbox = QtWidgets.QHBoxLayout()
+        hbox.addWidget(QtWidgets.QLabel("Channels:"))
+        self.selected_slices = QtWidgets.QLineEdit("0-2,3")
+        self.selected_slices.setMaximumWidth(100)
+        self.selected_slices.textChanged.connect(self.onSelectedSlicesTextChanged)
+        hbox.addWidget(self.selected_slices)
+        self.comboBox = CustomComboBox()
+        self.comboBox.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        hbox.addWidget(self.comboBox)
+        layout.addLayout(hbox)
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         vbox = QtWidgets.QVBoxLayout()
 
         hbox = QtWidgets.QHBoxLayout()
@@ -1811,41 +1842,26 @@ class CYTOSTUDIO:
         hbox.addStretch(1)
         vbox.addLayout(hbox)
 
+        
+#         hbox = QtWidgets.QHBoxLayout()
+        
+#         hbox.addWidget(QtWidgets.QLabel("Optical sections:"))
+#         self.m_optical_sections = QtWidgets.QLineEdit("")
+#         self.m_optical_sections.setMaximumWidth(50)
+#         hbox.addWidget(self.m_optical_sections)
 
-        hbox = QtWidgets.QHBoxLayout()
-        self.cb_correct_brightness_optical_section = QtWidgets.QCheckBox('Normalize brightness optical sections')
-        self.cb_correct_brightness_optical_section.setChecked(True)
-        hbox.addWidget(self.cb_correct_brightness_optical_section)
-        hbox.addStretch(1)
-        vbox.addLayout(hbox)
+#         self.cb_correct_brightness_optical_section = QtWidgets.QCheckBox('Normalize optical sections')
+#         self.cb_correct_brightness_optical_section.setChecked(True)
+#         hbox.addWidget(self.cb_correct_brightness_optical_section)
+#         hbox.addStretch(1)
+#         vbox.addLayout(hbox)
         
         
-        hbox = QtWidgets.QHBoxLayout()
-
-        # Create the label and set its size policy
-        label = QtWidgets.QLabel("Brightness:")
-        label.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
-        hbox.addWidget(label)
-
-        # Create the scrollbar
-        self.scroll_overall_brightness = QtWidgets.QScrollBar()
-        self.scroll_overall_brightness.setOrientation(QtCore.Qt.Horizontal)
-        self.scroll_overall_brightness.setRange(0, 1000)
-        self.scroll_overall_brightness.setValue(800)
-        self.scroll_overall_brightness.setMinimumWidth(150)
-        self.scroll_overall_brightness.valueChanged.connect(self.set_overall_brightness)
-
-        # Set the size policy for the scrollbar to expanding
-        self.scroll_overall_brightness.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-
-        # Add the scrollbar to the layout
-        hbox.addWidget(self.scroll_overall_brightness)
-
-        vbox.addLayout(hbox)
+        
         
 
         hbox = QtWidgets.QHBoxLayout()
-        hbox.addWidget(QtWidgets.QLabel("Slices range:"))
+        hbox.addWidget(QtWidgets.QLabel("Physical slices range:"))
         self.start_slice = QtWidgets.QLineEdit("")
         self.start_slice.setMaximumWidth(50)
         hbox.addWidget(self.start_slice)
@@ -1857,24 +1873,7 @@ class CYTOSTUDIO:
         vbox.addLayout(hbox)
         
         
-        hbox = QtWidgets.QHBoxLayout()
-        hbox.addWidget(QtWidgets.QLabel("Channels:"))
-        self.selected_slices = QtWidgets.QLineEdit("0-2,3")
-        #self.selected_slices.setMinimumWidth(50)
-        self.selected_slices.setMaximumWidth(100)
-        self.selected_slices.textChanged.connect(self.onSelectedSlicesTextChanged)
-        hbox.addWidget(self.selected_slices)
-        #hbox.addStretch(1)
         
-        
-        
-        self.comboBox = CustomComboBox()
-        # for i in range(100):
-        #     self.comboBox.addItem(f"Channel {i+1}")
-        self.comboBox.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        hbox.addWidget(self.comboBox)
-        
-        vbox.addLayout(hbox)
         
 
         hbox = QtWidgets.QHBoxLayout()
@@ -1893,13 +1892,18 @@ class CYTOSTUDIO:
         hbox.addWidget(bCrop)
         hbox.addStretch(1)
         vbox.addLayout(hbox)
-
+        
+        
+        
+        
+        vbox_2 = QtWidgets.QVBoxLayout()
+        
         hbox = QtWidgets.QHBoxLayout()
         hbox.addWidget(QtWidgets.QLabel("Tissue threshold value:"))
         self.thresholdN = QtWidgets.QLineEdit("0.3")
         hbox.addWidget(self.thresholdN)
         hbox.addStretch(1)
-        vbox.addLayout(hbox)
+        vbox_2.addLayout(hbox)
 
         hbox = QtWidgets.QHBoxLayout()
         hbox.addWidget(QtWidgets.QLabel("Number of regions to retain:"))
@@ -1907,14 +1911,14 @@ class CYTOSTUDIO:
         self.spinN.setValue(1)
         hbox.addWidget(self.spinN)
         hbox.addStretch(1)
-        vbox.addLayout(hbox)
+        vbox_2.addLayout(hbox)
 
         hbox = QtWidgets.QHBoxLayout()
         hbox.addWidget(QtWidgets.QLabel("Minimal size:"))
         self.maxSizeN = QtWidgets.QLineEdit("1000")
         hbox.addWidget(self.maxSizeN)
         hbox.addStretch(1)
-        vbox.addLayout(hbox)
+        vbox_2.addLayout(hbox)
 
         hbox = QtWidgets.QHBoxLayout()
         bKeepN = QtWidgets.QPushButton('Show only large regions')
@@ -1926,7 +1930,13 @@ class CYTOSTUDIO:
         bRemoveN.clicked.connect(self.Remove_Small_Regions)
         hbox.addWidget(bRemoveN)
         hbox.addStretch(1)
-        vbox.addLayout(hbox)
+        vbox_2.addLayout(hbox)
+        
+        
+        groupbox = QtWidgets.QGroupBox("Bead removal")
+        groupbox.setCheckable(False)
+        groupbox.setLayout(vbox_2)
+        vbox.addWidget(groupbox)
         
         
         
@@ -2047,6 +2057,33 @@ class CYTOSTUDIO:
         groupbox.setCheckable(False)
         groupbox.setLayout(vbox)
         layout.addWidget(groupbox)
+        
+        
+        
+        
+        
+        hbox = QtWidgets.QHBoxLayout()
+
+        # Create the label and set its size policy
+        label = QtWidgets.QLabel("Brightness:")
+        label.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        hbox.addWidget(label)
+
+        # Create the scrollbar
+        self.scroll_overall_brightness = QtWidgets.QScrollBar()
+        self.scroll_overall_brightness.setOrientation(QtCore.Qt.Horizontal)
+        self.scroll_overall_brightness.setRange(0, 1000)
+        self.scroll_overall_brightness.setValue(800)
+        self.scroll_overall_brightness.setMinimumWidth(150)
+        self.scroll_overall_brightness.valueChanged.connect(self.set_overall_brightness)
+
+        # Set the size policy for the scrollbar to expanding
+        self.scroll_overall_brightness.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+
+        # Add the scrollbar to the layout
+        hbox.addWidget(self.scroll_overall_brightness)
+
+        layout.addLayout(hbox)
         
         
         widget.setLayout(layout)

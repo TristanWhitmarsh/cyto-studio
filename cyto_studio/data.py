@@ -15,6 +15,7 @@ import numpy as np
 import math
 import SimpleITK as sitk
 import pandas as pd
+import cv2
 
 from PySide2.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea,
                                QComboBox, QCheckBox, QListWidget, QListWidgetItem, QMessageBox, QFileDialog, QMainWindow)
@@ -413,18 +414,23 @@ class Data:
 
 
         return new_volume   
-                
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
     def Load3D(self, viewer, image_folder, comboBoxPath, selected_channels, default_contrast_limits, thresholdN, channels_start, axio, old_method, overall_brightness, scroll, scroll_overall_brightness, pixel_size, m_slice_spacing, start_slice, end_slice, crop, crop_start_x, crop_end_x, crop_start_y, crop_end_y):
         random.seed(42)
         
         verbose = True
 
-        
-
         # Clear memory
         gc.collect()
-
 
                   
         if verbose:
@@ -440,7 +446,6 @@ class Data:
             default_contrast_limits = [0,30]
             thresholdN.setText("0.3")
             channels_start = 1
-        print(file_name)
 
         # Try to read only the meta data using the consolidated flag as True
         # Currently not used
@@ -454,46 +459,62 @@ class Data:
             
             
         channel_names = self.ds1.coords['channel'].values.tolist()
-        print(f"channel_names: {channel_names}")
-
+        if verbose:
+            print(f"channel_names: {channel_names}")
         
         
-        # Read the image spacing
-#         if self.old_method:
-#             self.spacing = (self.ds1['S001'].attrs['scale'])
-#         else:
-#             self.spacing = [1,1]
-#             try:
-#                 self.spacing[0] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][0])
-#                 self.spacing[1] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][1])
-#             except:
-#                 try:
-#                     self.spacing[0] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["x"])
-#                     self.spacing[1] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["y"])
-#                     # self.spacing[2] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["z"])
-#                 except:
-#                     print("spacing not defined")
-                
 
+        # Initialize spacing with default zeros
+        self.spacing = [0, 0, 0]
 
-        # Read the image spacing
-        try:
-            self.spacing = [0,0,0]
-            self.spacing[0] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["x"])
-            self.spacing[1] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["y"])
-            self.spacing[2] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["z"])
+        # Find available slice keys that start with 'S'
+        available_slices = [key for key in self.ds1.data_vars.keys() if key.startswith("S")]
 
+        if available_slices:
+            # Sort the slices lexicographically to get the first one (or you can choose a different ordering)
+            available_slices.sort()
+            first_slice = available_slices[0]
             if verbose:
-                print(f"spacing ({self.spacing[0]}, {self.spacing[1]}, {self.spacing[2]})")
-
-        except Exception:
-
+                print(f"Using first available slice: {first_slice}")
+            try:
+                scale_info = json.loads(self.ds1[first_slice].attrs['scale'])
+                self.spacing[0] = float(scale_info["x"])
+                self.spacing[1] = float(scale_info["y"])
+                self.spacing[2] = float(scale_info["z"])
+            except:
+                try:
+                    self.spacing = 0.1*(self.ds1[first_slice].attrs['scale'])
+                except:
+                    try:
+                        self.spacing[0] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][0])
+                        self.spacing[1] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][1])
+                        self.spacing[2] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][2])
+                    except:
+                        print("No slice available; using default spacing.")
+                        self.spacing = [1, 1, 1]
+        else:
+            print("No slice available; using default spacing.")
+            self.spacing = [1, 1, 1]
+            
+            
+            
+        # Read the image spacing
+        if self.old_method:
             self.spacing = (self.ds1['S001'].attrs['scale'])
+        else:
+            self.spacing = [1,1]
+            try:
+                self.spacing[0] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][0])
+                self.spacing[1] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][1])
+            except:
+                try:
+                    self.spacing[0] = float(json.loads(self.ds1['S001'].attrs['scale'])["x"])
+                    self.spacing[1] = float(json.loads(self.ds1['S001'].attrs['scale'])["y"])
+                except:
+                    print("spacing not defined")
 
-            print(f"spacing ({self.spacing[0]}, {self.spacing[1]})")
             
             
-                
         if verbose:
             print(f"spacing ({self.spacing[0]}, {self.spacing[1]})")
 
@@ -572,19 +593,6 @@ class Data:
         if verbose:
             print(f"loading at resolution {resolution} with index {index}")
         
-
-        # Open the image file
-        # if axio:
-        #     ds = xr.open_zarr(file_name, group='l.{0:d}'.format(resolution))
-        # else:
-        #     if self.old_method:
-        #         gr = self.ds1.attrs["multiscale"]['datasets'][index]['path']
-        #         ds = xr.open_zarr(file_name, group=gr)
-        #     else:
-        #         gr = json.loads(self.ds1.attrs["multiscale"])['datasets'][index]['path']
-        #         ds = xr.open_zarr(file_name, group=gr)
-
-
         try:
             gr = self.ds1.attrs["multiscale"]['datasets'][index]['path']
             ds = xr.open_zarr(file_name, group=gr)
@@ -593,8 +601,11 @@ class Data:
                 gr = json.loads(self.ds1.attrs["multiscale"])['datasets'][index]['path']
                 ds = xr.open_zarr(file_name, group=gr)
             except:
-                ds = xr.open_zarr(file_name, group='l.{0:d}'.format(resolution))
-
+                try:
+                    ds = xr.open_zarr(file_name, group='l.{0:d}'.format(resolution))
+                except:
+                    print("could not read") 
+                
                 
         # Get the number of optical slices that are available
         if axio:
@@ -619,11 +630,13 @@ class Data:
                 try:
                     optical_section_spacing = float(json.loads(self.ds1['S001'].attrs['raw_meta'])['zres'])
                 except:
-                    optical_section_spacing = 1
+                    print(f"Unknown optical slice thickness. Using default of 20um. Set manually if needed.")
+                    optical_section_spacing = 20
 
 
         if verbose:
             print(f"optical_slices zres: {optical_section_spacing}")
+            
 
 
         # Calculate how many optical slices to use
@@ -654,24 +667,7 @@ class Data:
         if verbose:
             print(f"number of optical slices used: {self.optical_slices}")
 
-        # Make copies of the translations for all the optical slices used
-        if self.old_method:
-            self.corrected_align_x = self.align_x
-            self.corrected_align_y = self.align_y
-        else:
-            self.corrected_align_x = []
-            for index, value in enumerate(self.align_x):
-                for i in range(0,self.optical_slices):
-                    self.corrected_align_x.append(value)
 
-            self.corrected_align_y = []
-            for index, value in enumerate(self.align_y):
-                for i in range(0,self.optical_slices):
-                    self.corrected_align_y.append(value)
-
-
-        if verbose:
-            print(f"There are {len(self.corrected_align_x)} translations")
 
         # Set perspective view which aids the navigation
         viewer.window.qt_viewer.camera._3D_camera.fov = 45
@@ -709,102 +705,193 @@ class Data:
         number_of_channels = len(selected_channels)
         if verbose:
             print("Number of channels:", number_of_channels)
-
+            
         spacing_loaded = [float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution]
+        
+        
+        
+        # df = pd.read_parquet("../../imaxt/amolaei/2025/20250100_MPR_BalbC_4T1_zsg_cont_lung_121_100x20um/internal_reg/20250100_MPR_BalbC_4T1_zsg_cont_lung_121_100x20um_INT_STPT_STPT_all_reg.parquet", engine='pyarrow')
+        # print(df)
+                            
+        # Extract directory and the parent folder name (one level above 'mos')
+        file_dir = os.path.dirname(file_name)
+        parent_folder = os.path.basename(file_dir)  # Get the folder name above 'mos'
+        
+        # print(file_dir)
+        # print(parent_folder)
+
+        # Construct the expected parquet file path
+        parquet_file = os.path.join(file_dir, f"internal_reg/{parent_folder}_INT_STPT_STPT_all_reg.parquet")
+
+        # Check if the parquet file exists
+        use_registration = False
+        if os.path.exists(parquet_file):
+            print(f"Found registration file: {parquet_file}")
+            df = pd.read_parquet(parquet_file, engine='pyarrow')
+            use_registration = True  # Enable registration
+            # print(df)
+        else:
+            print(f"Registration file not found: {parquet_file}")
+
+        
+        
+        if start_slice == "":
+            start_slice_number = 1
+        else:
+            start_slice_number = int(start_slice)
+            
+        if end_slice == "":
+            end_slice_number = self.number_of_sections
+        else:
+            end_slice_number = int(end_slice)
+             
+        
 
         for chn in range(50):
             if chn in selected_channels:
-                print(f"loading channel {chn}")
+                if verbose:
+                    print(f"loading channel {chn}")
                 
-                if axio:
+                if False:
                     try:
-                        volume_1_temp = (ds.sel(type='mosaic').to_array(
-                        ).data * self.bscale + self.bzero).astype(dtype=np.float32)
+                        volume_1_temp = (ds.sel(type='mosaic').to_array().data * self.bscale + self.bzero).astype(dtype=np.float32)
                         volume_1_temp = volume_1_temp[:,chn,:,:]
                     except Exception as e:
                         if verbose:
                             print("An error occurred:", str(e))
-                        volume_1_temp = (ds.to_array(
-                        ).data * self.bscale + self.bzero).astype(dtype=np.float32)
+                        volume_1_temp = (ds.to_array().data * self.bscale + self.bzero).astype(dtype=np.float32)
                         volume_1_temp = volume_1_temp[:,chn,:,:]
                 else:
-                    try:
-                        volume_1_temp = (ds.sel(type='mosaic', z=0).to_array(
-                        ).data * self.bscale + self.bzero).astype(dtype=np.float32)
-                        volume_1_temp = volume_1_temp[:,chn,:,:]
-                    except Exception as e:
-                        if verbose:
-                            print("An error occurred:", str(e))
-                        try:
-                            volume_1_temp = (ds.sel(z=0).to_array(
-                            ).data * self.bscale + self.bzero).astype(dtype=np.float32)
-                            volume_1_temp = volume_1_temp[:,chn,:,:]
-                        except Exception as e:
-                            if verbose:
-                                print("An error occurred:", str(e))
-                            print("skipping this channel since it can't be read")
-                            continue
+                    slices = []
+                    for section in range(start_slice_number,end_slice_number+1):
+                    #for section in range(98,101):
+                        for optical_slice in range(1,self.optical_slices+1):
 
-                
+                            slice_name = f"S{(section):03d}"
+                            
+                            if slice_name not in ds:
+                                if verbose:
+                                    print(f"Slice {slice_name} not found, skipping.")
+                                continue
+                            try:
+                                slice_data = (ds[slice_name].sel(type='mosaic', z=optical_slice).data * self.bscale + self.bzero).squeeze()
+                            except:
+                                try:
+                                    slice_data = (ds[slice_name].sel(z=optical_slice).data * self.bscale + self.bzero).squeeze()
+                                except:
+                                    try:
+                                        slice_data = (ds[slice_name].data * self.bscale + self.bzero).squeeze()
+                                    except:
+                                        print("skipping this channel since it can't be read")
+                                        continue      
+                                       
+                            
+                            # print(f"slice_data.shape {slice_data.shape}")
+                            #slice_data = slice_data[0]
+                            #print(f"slice_data.shape {slice_data.shape}")
+                                       
+                            if slice_data.ndim == 4:
+                                if axio:
+                                    slice_data = slice_data[:,1,:,:]
+                                else:
+                                    slice_data = slice_data[0]
+                                
+                            if slice_data.ndim != 2:
+                                slice_data = slice_data[chn]
+                                
+                            # print(f"slice_data.shape {slice_data.shape}")
+                            
+                            if use_registration:
+                                # M_00 = df.iloc[section-1]['M_00']
+                                # M_01 = df.iloc[section-1]['M_01']
+                                # M_02 = df.iloc[section-1]['M_02']
+                                # M_10 = df.iloc[section-1]['M_10']
+                                # M_11 = df.iloc[section-1]['M_11']
+                                # M_12 = df.iloc[section-1]['M_12']
+                                
+                                # Filter rows where 'S_S' matches the slice_name
+                                matching_rows = df[df['S_S'] == slice_name]
+
+                                # If at least one row matches, use the first match
+                                if not matching_rows.empty:
+                                    row = matching_rows.iloc[0]
+                                    M_00 = row['M_00']
+                                    M_01 = row['M_01']
+                                    M_02 = row['M_02']
+                                    M_10 = row['M_10']
+                                    M_11 = row['M_11']
+                                    M_12 = row['M_12']
+                                else:
+                                    # Handle the case where no rows match
+                                    print(f"No matching row found for slice_name = {slice_name}")
+                                    continue
+
+                                # Create the 2x3 matrix:
+                                M = np.array([[M_00, M_01, M_02],
+                                              [M_10, M_11, M_12]], dtype=np.float32)
+
+                                M_adj = M.copy()
+                                M_adj[0, 2] = M_adj[0, 2] / resolution
+                                M_adj[1, 2] = M_adj[1, 2] / resolution
+
+                                rotation_rad = np.arctan2(M_10, M_00)
+                                rotation_deg = np.degrees(rotation_rad)
+                                translation = (M_02, M_12)
+                                rows, cols = slice_data.shape
+                                
+                                slice_data = slice_data.compute()
+                                
+                                transformed_slice_data = cv2.warpAffine(slice_data, M_adj, (cols, rows), flags=cv2.INTER_LINEAR)
+                                slice_data = transformed_slice_data
+
+
+                            size_multiplier = (resolution*self.spacing[0])/output_resolution
+                            size2D = (int(size_multiplier*slice_data.shape[1]), int(size_multiplier*slice_data.shape[0]))
+
+                            fixed = sitk.GetImageFromArray(slice_data)
+                            fixed.SetOrigin((0, 0))
+                            fixed.SetSpacing([resolution*self.spacing[1],resolution*self.spacing[0]])
+
+                            transform = sitk.Euler2DTransform()
+
+                            resampler = sitk.ResampleImageFilter()
+                            resampler.SetSize(size2D)
+                            resampler.SetOutputSpacing([output_resolution, output_resolution])
+                            resampler.SetOutputOrigin((0, 0))
+                            resampler.SetInterpolator(sitk.sitkLinear)
+                            resampler.SetDefaultPixelValue(0)
+                            resampler.SetTransform(transform)
+
+                            out = resampler.Execute(fixed)
+
+                            resampled_slice = sitk.GetArrayFromImage(out)
+
+                            slices.append(resampled_slice)
+
+                    # Stack the 2D slices (each now with shape (Y, X)) into a 3D volume.
+                    volume_1_temp = np.stack(slices, axis=0)
+                    # print("Volume shape:", volume_1_temp.shape)
+
 
                 if crop:
-                    spacing_x = resolution*0.1*self.spacing[0]
-                    spacing_y = resolution*0.1*self.spacing[1]
+                    spacing_x = resolution*self.spacing[0]
+                    spacing_y = resolution*self.spacing[1]
 
                     size_y = int(math.floor((crop_end_x - crop_start_x) / spacing_x))
                     size_z = int(math.floor((crop_end_y - crop_start_y) / spacing_y))
                     start_y = int(math.floor(crop_start_x / spacing_x))
                     start_z = int(math.floor(crop_start_y / spacing_y))
                 else:
-                    if axio:
-                        size_y = int(math.floor(volume_1_temp.shape[2]))
-                        size_z = int(math.floor(volume_1_temp.shape[3]))
-                    else:
-                        size_y = int(math.floor(volume_1_temp.shape[1]))
-                        size_z = int(math.floor(volume_1_temp.shape[2]))
+                    # if axio:
+                    #     size_y = int(math.floor(volume_1_temp.shape[2]))
+                    #     size_z = int(math.floor(volume_1_temp.shape[3]))
+                    # else:
+                    size_y = int(math.floor(volume_1_temp.shape[1]))
+                    size_z = int(math.floor(volume_1_temp.shape[2]))
                     start_y = 0
                     start_z = 0
-
-                volume_1 = np.zeros((self.optical_slices*number_of_slices, size_y, size_z), dtype=np.float32)
-
-                if number_of_slices != volume_1_temp[start_slice_number:end_slice_number+1, start_y:start_y+size_y, start_z:start_z+size_z].shape[0]:
-                    msg = QMessageBox()
-                    msg.setIcon(QMessageBox.Critical)
-                    msg.setText("One or more slices appear to be missing")
-                    msg.setInformativeText("Find the missing slice(s) by using the Load slice function and " \
-    "scrolling through the slices until an error message is displayed. " \
-    "Then set a Slices range to avoid this slice.")
-                    msg.setWindowTitle("Error")
-                    msg.setStandardButtons(QMessageBox.Ok)
-                    retval = msg.exec_()
-                    return
-
-                volume_1[0::self.optical_slices, :, :] = volume_1_temp[start_slice_number:end_slice_number+1, start_y:start_y+size_y, start_z:start_z+size_z]
-
-                for optical_slice in range(1, self.optical_slices):
-                    try:
-                        volume_1_temp = (ds.sel(channel=channels_start, type='mosaic', z=optical_slice).to_array(
-                        ).data * self.bscale + self.bzero).astype(dtype=np.float32)
-                    except:
-                        volume_1_temp = (ds.sel(channel=channels_start, z=optical_slice).to_array(
-                        ).data * self.bscale + self.bzero).astype(dtype=np.float32)
-
-                    volume_1[optical_slice::self.optical_slices, :, :] = volume_1_temp[start_slice_number:end_slice_number+1, start_y:start_y+size_y, start_z:start_z+size_z]
-
                     
-                    
-                    
-                # Normalize the brightness changes between optical sections
-                # if self.cb_correct_brightness_optical_section.isChecked():
-                #     print("correcting brightness of optical sections C1")
-                #     self.Normalize_slices(volume_1, self.optical_slices)
-
-                print("aligning")
-                aligned_1 = self.Align(volume_1, resolution, output_resolution, start_slice_number*self.optical_slices, self.spacing, str(comboBoxPath))
-                #aligned_1 = volume_1
-
-                aligned_1 = aligned_1[chop_bottom:aligned_1.shape[0]-chop_top,:,:]
-                self.shape = aligned_1.shape
+                self.shape = volume_1_temp.shape
 
                 if verbose:
                     print(f"self.shape {self.shape}")
@@ -844,10 +931,20 @@ class Data:
                     viewer.layers.remove(channel_name)
                     
                 
-                min_value = volume_1.min()
+                min_val = volume_1_temp.min()
+                if hasattr(min_val, 'compute'):
+                    min_value = float(min_val.compute())
+                else:
+                    min_value = float(min_val)
+
                 if min_value < 0:
                     min_value = 0
-                max_value = volume_1.max()
+
+                max_val = volume_1_temp.max()
+                if hasattr(max_val, 'compute'):
+                    max_value = float(max_val.compute())
+                else:
+                    max_value = float(max_val)
                 
                 self.value_range = [min_value, max_value]
                 
@@ -855,18 +952,431 @@ class Data:
                 contrast_limits = [self.value_range[0],self.value_range[1]*self.overall_brightness]
                 
 
-                # viewer.add_image([aligned_1], name=channel_name, scale=(float(self.slice_spacing)/float(self.optical_slices) / output_resolution, 1, 1), 
-                #                       blending='additive', colormap=color_map, contrast_limits=contrast_limits, scale=self.spacing)
+                print(f"scale= {(float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution)}")
 
-                viewer.add_image([aligned_1], name=channel_name, scale=(float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution), 
+                viewer.add_image([volume_1_temp], name=channel_name, scale=(float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution), 
                                       blending='additive', colormap=color_map, contrast_limits=contrast_limits)
 
-                self.shape = aligned_1.shape
-
-        
+                self.shape = volume_1_temp.shape
 
         
         return self.optical_slices_available, self.value_range, self.shape, self.slice_spacing, self.optical_slices, output_resolution
+    
+    
+    
+    
+    
+    
+    
+                
+
+#     def Load3D_old(self, viewer, image_folder, comboBoxPath, selected_channels, default_contrast_limits, thresholdN, channels_start, axio, old_method, overall_brightness, scroll, scroll_overall_brightness, pixel_size, m_slice_spacing, start_slice, end_slice, crop, crop_start_x, crop_end_x, crop_start_y, crop_end_y):
+#         random.seed(42)
+        
+#         verbose = True
+
+#         # Clear memory
+#         gc.collect()
+
+                  
+#         if verbose:
+#             print(f"folder location: " + image_folder)
+            
+        
+#         file_name = image_folder + str(comboBoxPath) + '/mos'
+#         default_contrast_limits = [0,30000]
+#         thresholdN.setText("1000")
+#         channels_start = 0
+#         if not os.path.exists(file_name):
+#             file_name = image_folder + str(comboBoxPath) + '/mos.zarr'
+#             default_contrast_limits = [0,30]
+#             thresholdN.setText("0.3")
+#             channels_start = 1
+#         print(file_name)
+
+#         # Try to read only the meta data using the consolidated flag as True
+#         # Currently not used
+#         try:
+#             self.ds1 = xr.open_zarr(file_name, consolidated=False)
+#             # print("not trying consolidated")
+#         except Exception:
+#             print("none-consolidated")
+#             self.ds1 = xr.open_zarr(file_name)
+            
+            
+            
+#         channel_names = self.ds1.coords['channel'].values.tolist()
+#         print(f"channel_names: {channel_names}")
+
+        
+#         # Read the image spacing
+#         try:
+#             self.spacing = [0,0,0]
+#             self.spacing[0] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["x"])
+#             self.spacing[1] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["y"])
+#             self.spacing[2] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["z"])
+
+#             if verbose:
+#                 print(f"spacing ({self.spacing[0]}, {self.spacing[1]}, {self.spacing[2]})")
+
+#         except Exception:
+
+#             self.spacing = (self.ds1['S001'].attrs['scale'])
+
+#             print(f"spacing ({self.spacing[0]}, {self.spacing[1]})")
+            
+            
+                
+#         if verbose:
+#             print(f"spacing ({self.spacing[0]}, {self.spacing[1]})")
+
+#         # Read the parameters to convert the voxel values (bscale and bzero)
+#         if self.old_method:
+#             self.bscale = self.ds1.attrs['bscale']
+#             self.bzero = self.ds1.attrs['bzero']
+#         else:
+#             try:
+#                 self.bscale = self.ds1['S001'].attrs['bscale']
+#                 self.bzero = self.ds1['S001'].attrs['bzero']
+#             except:
+#                 self.bscale = 1
+#                 self.bzero = 0
+
+#         if verbose:
+#             print(f"bscale {self.bscale}, bzero {self.bzero}")
+
+
+#         # Get number of sections
+#         if axio:
+#             self.number_of_sections = len(list(self.ds1))
+
+        
+#         self.number_of_sections = len(list(self.ds1))
+#         if verbose:
+#             print(f"Number of sections: {self.number_of_sections}")
+            
+
+#         # Read the translation values
+#         if self.old_method:
+#             self.align_x = self.ds1.attrs['cube_reg']['abs_dx']
+#             self.align_y = self.ds1.attrs['cube_reg']['abs_dy']
+#         else:
+#             self.align_x = []
+#             self.align_y = []
+
+#             for z in range(0, self.number_of_sections):
+#                 # slice_name = f"S{(z+1):03d}"
+#                 # self.align_x.append(self.ds1[slice_name].attrs['offsets']['x'])
+#                 # self.align_y.append(self.ds1[slice_name].attrs['offsets']['y'])
+#                 self.align_x.append(0)
+#                 self.align_y.append(0)
+
+#         if verbose:
+#             print(f"align_x {self.align_x}")
+#             print(f"align_y {self.align_y}")
+        
+
+#         # User defined output pixel size
+#         output_resolution = float(pixel_size)
+
+#         if verbose:
+#             print(f"output pixel size {output_resolution}")
+
+
+#         # Calculate at which resolution the image should be read based on the image spacing and output pixel size
+#         resolution = 32
+#         index = 5
+#         if (output_resolution / 0.5) < 32:
+#             resolution = 16
+#             index = 4
+#         if (output_resolution / 0.5) < 16:
+#             resolution = 8
+#             index = 3
+#         if (output_resolution / 0.5) < 8:
+#             resolution = 4
+#             index = 2
+#         if (output_resolution / 0.5) < 4:
+#             resolution = 2
+#             index = 1
+#         if (output_resolution / 0.5) < 2:
+#             resolution = 1
+#             index = 0
+
+#         if verbose:
+#             print(f"loading at resolution {resolution} with index {index}")
+        
+#         try:
+#             gr = self.ds1.attrs["multiscale"]['datasets'][index]['path']
+#             ds = xr.open_zarr(file_name, group=gr)
+#         except:
+#             try:
+#                 gr = json.loads(self.ds1.attrs["multiscale"])['datasets'][index]['path']
+#                 ds = xr.open_zarr(file_name, group=gr)
+#             except:
+#                 ds = xr.open_zarr(file_name, group='l.{0:d}'.format(resolution))
+
+                
+#         # Get the number of optical slices that are available
+#         if axio:
+#             self.optical_slices_available = 1
+#         else:
+#             self.optical_slices_available = len(ds.z)
+
+#         if verbose:
+#             print(f"optical slices available: {self.optical_slices_available}")
+        
+#         # Slice spacing given by the user, which should be extracted from the file name
+#         self.slice_spacing = float(m_slice_spacing)
+
+#         # Get the optical slice spacing
+#         if self.old_method or axio:
+#             # assume that the optical slices do not overlap
+#             optical_section_spacing = self.slice_spacing / self.optical_slices_available
+#         else:
+#             try:
+#                 optical_section_spacing = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['optical_section_spacing'])
+#             except:
+#                 try:
+#                     optical_section_spacing = float(json.loads(self.ds1['S001'].attrs['raw_meta'])['zres'])
+#                 except:
+#                     optical_section_spacing = 1
+
+
+#         if verbose:
+#             print(f"optical_slices zres: {optical_section_spacing}")
+
+
+#         # Calculate how many optical slices to use
+#         if self.optical_slices_available > 1:
+#             expected_nr_of_slices = round(self.slice_spacing / optical_section_spacing)
+#             if self.optical_slices_available > expected_nr_of_slices:
+#                 self.optical_slices = expected_nr_of_slices
+#             else:
+#                 self.optical_slices = self.optical_slices_available
+#         else:
+#             self.optical_slices = 1
+
+
+#         # Get slice names
+#         if self.old_method:
+#             self.slice_names = self.ds1.attrs['cube_reg']['slice']
+#         else:
+#             self.slice_names = []
+#             for z in range(0, self.number_of_sections):
+#                 slice_name = f"S{(z+1):03d}"
+#                 for i in range(0, self.optical_slices):
+#                     self.slice_names.append(slice_name)
+        
+#         if verbose:
+#             print(f"slice names: {self.slice_names}")
+
+
+#         if verbose:
+#             print(f"number of optical slices used: {self.optical_slices}")
+
+#         # Make copies of the translations for all the optical slices used
+#         if self.old_method:
+#             self.corrected_align_x = self.align_x
+#             self.corrected_align_y = self.align_y
+#         else:
+#             self.corrected_align_x = []
+#             for index, value in enumerate(self.align_x):
+#                 for i in range(0,self.optical_slices):
+#                     self.corrected_align_x.append(value)
+
+#             self.corrected_align_y = []
+#             for index, value in enumerate(self.align_y):
+#                 for i in range(0,self.optical_slices):
+#                     self.corrected_align_y.append(value)
+
+
+#         if verbose:
+#             print(f"There are {len(self.corrected_align_x)} translations")
+
+#         # Set perspective view which aids the navigation
+#         viewer.window.qt_viewer.camera._3D_camera.fov = 45
+
+#         # Store the output resolution in which this volume was loaded
+#         self.current_output_resolution = float(pixel_size)
+
+#         # Define start slice
+#         if start_slice == "":
+#             start_slice_number = 0
+#             chop_bottom = 0
+#         else:
+#             start_slice_number = int(math.floor(float(start_slice)/float(self.optical_slices)))
+#             chop_bottom = int(start_slice) - (self.optical_slices * start_slice_number) 
+
+#         # Define end slice
+#         if end_slice == "":
+#             end_slice_number = self.number_of_sections-1
+#             chop_top = 0
+#         else:
+#             end_slice_number = int(math.floor(float(end_slice)/float(self.optical_slices)))
+#             chop_top = (self.optical_slices * (end_slice_number + 1) -1) - int(end_slice) 
+
+#         # Define number of slices
+#         number_of_slices = end_slice_number - start_slice_number + 1
+#         if verbose:
+#             print(f"number_of_slices {number_of_slices}")
+            
+            
+#         # Parse the selected channels
+#         # selected_channels = parse_channel_input(selected_slices)
+#         if verbose:
+#             print("Selected channels:", selected_channels)
+            
+#         number_of_channels = len(selected_channels)
+#         if verbose:
+#             print("Number of channels:", number_of_channels)
+
+#         spacing_loaded = [float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution]
+
+#         for chn in range(50):
+#             if chn in selected_channels:
+#                 print(f"loading channel {chn}")
+                
+#                 if axio:
+#                     try:
+#                         volume_1_temp = (ds.sel(type='mosaic').to_array(
+#                         ).data * self.bscale + self.bzero).astype(dtype=np.float32)
+#                         volume_1_temp = volume_1_temp[:,chn,:,:]
+#                     except Exception as e:
+#                         if verbose:
+#                             print("An error occurred:", str(e))
+#                         volume_1_temp = (ds.to_array(
+#                         ).data * self.bscale + self.bzero).astype(dtype=np.float32)
+#                         volume_1_temp = volume_1_temp[:,chn,:,:]
+#                 else:
+#                     try:
+#                         volume_1_temp = (ds.sel(type='mosaic', z=0).to_array(
+#                         ).data * self.bscale + self.bzero).astype(dtype=np.float32)
+#                         volume_1_temp = volume_1_temp[:,chn,:,:]
+#                     except Exception as e:
+#                         if verbose:
+#                             print("An error occurred:", str(e))
+#                         try:
+#                             volume_1_temp = (ds.sel(z=0).to_array(
+#                             ).data * self.bscale + self.bzero).astype(dtype=np.float32)
+#                             volume_1_temp = volume_1_temp[:,chn,:,:]
+#                         except Exception as e:
+#                             if verbose:
+#                                 print("An error occurred:", str(e))
+#                             print("skipping this channel since it can't be read")
+#                             continue
+
+                
+
+#                 if crop:
+#                     spacing_x = resolution*0.1*self.spacing[0]
+#                     spacing_y = resolution*0.1*self.spacing[1]
+
+#                     size_y = int(math.floor((crop_end_x - crop_start_x) / spacing_x))
+#                     size_z = int(math.floor((crop_end_y - crop_start_y) / spacing_y))
+#                     start_y = int(math.floor(crop_start_x / spacing_x))
+#                     start_z = int(math.floor(crop_start_y / spacing_y))
+#                 else:
+#                     if axio:
+#                         size_y = int(math.floor(volume_1_temp.shape[2]))
+#                         size_z = int(math.floor(volume_1_temp.shape[3]))
+#                     else:
+#                         size_y = int(math.floor(volume_1_temp.shape[1]))
+#                         size_z = int(math.floor(volume_1_temp.shape[2]))
+#                     start_y = 0
+#                     start_z = 0
+
+#                 volume_1 = np.zeros((self.optical_slices*number_of_slices, size_y, size_z), dtype=np.float32)
+
+#                 if number_of_slices != volume_1_temp[start_slice_number:end_slice_number+1, start_y:start_y+size_y, start_z:start_z+size_z].shape[0]:
+#                     msg = QMessageBox()
+#                     msg.setIcon(QMessageBox.Critical)
+#                     msg.setText("One or more slices appear to be missing")
+#                     msg.setInformativeText("Find the missing slice(s) by using the Load slice function and " \
+#     "scrolling through the slices until an error message is displayed. " \
+#     "Then set a Slices range to avoid this slice.")
+#                     msg.setWindowTitle("Error")
+#                     msg.setStandardButtons(QMessageBox.Ok)
+#                     retval = msg.exec_()
+#                     return
+
+#                 volume_1[0::self.optical_slices, :, :] = volume_1_temp[start_slice_number:end_slice_number+1, start_y:start_y+size_y, start_z:start_z+size_z]
+
+#                 for optical_slice in range(1, self.optical_slices):
+#                     try:
+#                         volume_1_temp = (ds.sel(channel=channels_start, type='mosaic', z=optical_slice).to_array(
+#                         ).data * self.bscale + self.bzero).astype(dtype=np.float32)
+#                     except:
+#                         volume_1_temp = (ds.sel(channel=channels_start, z=optical_slice).to_array(
+#                         ).data * self.bscale + self.bzero).astype(dtype=np.float32)
+
+#                     volume_1[optical_slice::self.optical_slices, :, :] = volume_1_temp[start_slice_number:end_slice_number+1, start_y:start_y+size_y, start_z:start_z+size_z]
+
+#                 print("aligning")
+#                 aligned_1 = self.Align(volume_1, resolution, output_resolution, start_slice_number*self.optical_slices, self.spacing, str(comboBoxPath))
+#                 #aligned_1 = volume_1
+
+#                 aligned_1 = aligned_1[chop_bottom:aligned_1.shape[0]-chop_top,:,:]
+#                 self.shape = aligned_1.shape
+
+#                 if verbose:
+#                     print(f"self.shape {self.shape}")
+
+#                 if chn==0:
+#                     color_map='bop purple'
+#                 elif chn==1:
+#                     color_map='red'
+#                 elif chn==2:
+#                     color_map='green'
+#                 elif chn==3:
+#                     color_map='blue'
+#                 elif chn==4:
+#                     color_map='yellow'
+#                 elif chn==5:
+#                     color_map='magenta'
+#                 elif chn==6:
+#                     color_map='cyan'
+#                 elif chn==7:
+#                     color_map='bop orange'
+#                 elif chn==8:
+#                     color_map='bop blue'
+#                 elif chn==9:
+#                     color_map='bop purple'
+#                 else:
+#                     # Generate a random hue value between 0 and 1 (representing the entire spectrum)
+#                     random_hue = random.uniform(0, 1)
+
+#                     # Convert the hue value to an RGB color
+#                     rgb_color = colorsys.hsv_to_rgb(random_hue, 1, 1)
+
+#                     color_map= vispy.color.Colormap([[0.0, 0.0, 0.0], [rgb_color[0], rgb_color[1], rgb_color[2]]])
+
+#                 channel_name = channel_names[chn]
+
+#                 if any(i.name == channel_name for i in viewer.layers):
+#                     viewer.layers.remove(channel_name)
+                    
+                
+#                 min_value = volume_1.min()
+#                 if min_value < 0:
+#                     min_value = 0
+#                 max_value = volume_1.max()
+                
+#                 self.value_range = [min_value, max_value]
+                
+#                 self.overall_brightness = number_of_channels * (1.01 - (float(scroll_overall_brightness.value()) / 1000))
+#                 contrast_limits = [self.value_range[0],self.value_range[1]*self.overall_brightness]
+                
+
+#                 # viewer.add_image([aligned_1], name=channel_name, scale=(float(self.slice_spacing)/float(self.optical_slices) / output_resolution, 1, 1), 
+#                 #                       blending='additive', colormap=color_map, contrast_limits=contrast_limits, scale=self.spacing)
+
+#                 viewer.add_image([aligned_1], name=channel_name, scale=(float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution), 
+#                                       blending='additive', colormap=color_map, contrast_limits=contrast_limits)
+
+#                 self.shape = aligned_1.shape
+
+        
+#         return self.optical_slices_available, self.value_range, self.shape, self.slice_spacing, self.optical_slices, output_resolution
     
     
 
