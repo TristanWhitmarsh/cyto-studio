@@ -3,10 +3,12 @@ cyto-studio reads zarr files and displays them
 """
 
 import os
+os.environ.setdefault("QT_API", "pyside2")
 import sys
 import re
 import napari
 from napari._qt.widgets import qt_dims_slider
+import cyto_studio
 
 try:
     from .custom_qt_dims_slider import CustomQtDimSliderWidget
@@ -57,6 +59,7 @@ import pandas as pd
 from tifffile import imwrite
 from tifffile import TiffWriter
 from skimage.transform import resize
+import pkgutil
 
 try:
     from .my_widgets import ExtendedComboBox
@@ -112,6 +115,8 @@ class CYTOSTUDIO:
         
         self.origin_x = None
         self.origin_y = None
+        self.new_origin_x = None
+        self.new_origin_y = None
         self.crop_start_x = None
         self.crop_start_y = None
         self.crop_end_x = None
@@ -284,8 +289,8 @@ class CYTOSTUDIO:
                 # Handle ranges
                 start, end = part.split('-')
                 try:
-                    start = int(start)
-                    end = int(end)
+                    start = int(start)-1
+                    end = int(end)-1
                     channels.extend(range(start, end + 1))
                 except ValueError:
                     #print(f"Invalid range: {part}")
@@ -293,7 +298,7 @@ class CYTOSTUDIO:
             else:
                 # Single channel
                 try:
-                    channels.append(int(part))
+                    channels.append(int(part)-1)
                 except ValueError:
                     #print(f"Invalid channel: {part}")
                     pass
@@ -306,14 +311,17 @@ class CYTOSTUDIO:
 
     def LoadInRegion(self, text):
         
-        zoom = self.viewer.window.qt_viewer.camera.zoom
-        angles = self.viewer.window.qt_viewer.camera.angles
+        zoom   = self.viewer.camera.zoom
+        angles = self.viewer.camera.angles
+        center = self.viewer.camera.center
         
         if any(i.name == 'bounding box' for i in self.viewer.layers):
             self.viewer.layers.remove('bounding box')
         
         if any(i.name == 'crop box' for i in self.viewer.layers):
             self.viewer.layers.remove('crop box')
+            
+        self.current_output_resolution = float(self.pixel_size.text())
 
         print(self.viewer.layers['Shapes'].data)
         data_length = len(self.viewer.layers['Shapes'].data[0])
@@ -339,22 +347,28 @@ class CYTOSTUDIO:
         print("self.origin_y: {}".format(self.origin_y))
         print("self.current_output_resolution: {}".format(self.current_output_resolution))
         
-        self.crop_start_x = self.origin_x + (minX * self.current_output_resolution)
-        self.crop_start_y = self.origin_y + (minY * self.current_output_resolution)
-        self.crop_end_x = self.origin_x + (maxX * self.current_output_resolution)
-        self.crop_end_y = self.origin_y + (maxY * self.current_output_resolution)
+        layer = self.viewer.layers.selection.active
+        yz, y_res, x_res = layer.scale
+        print(f"XY resolution = {y_res} × {x_res} world‐units per pixel")
 
+        self.crop_start_x = self.origin_x + (minX * x_res)
+        self.crop_start_y = self.origin_y + (minY * y_res)
+        self.crop_end_x = self.origin_x + (maxX * x_res)
+        self.crop_end_y = self.origin_y + (maxY * y_res)
+        
         self.origin_x = self.crop_start_x
         self.origin_y = self.crop_start_y
         
+        #self.new_origin_x = self.crop_start_x
+        #self.new_origin_y = self.crop_start_y
         
         for layer in self.viewer.layers:
             if isinstance(layer, napari.layers.Image):
                 data = layer.data  # Get the data of the layer
-                self.crop_start_ratio_x = self.aligned_1.shape[1]/minX
-                self.crop_size_ratio_x = self.aligned_1.shape[1]/(maxX-minX)
-                self.crop_start_ratio_y = self.aligned_1.shape[2]/minY
-                self.crop_size_ratio_y = self.aligned_1.shape[2]/(maxY-minY)
+                self.crop_start_ratio_x = data.shape[1]/minX
+                self.crop_size_ratio_x = data.shape[1]/(maxX-minX)
+                self.crop_start_ratio_y = data.shape[2]/minY
+                self.crop_size_ratio_y = data.shape[2]/(maxY-minY)
                 break
                 
         self.viewer.layers.remove('Shapes')
@@ -365,15 +379,15 @@ class CYTOSTUDIO:
         print(f"crop_start_x {self.crop_start_x}, crop_start_y {self.crop_start_y}, crop_size_x {self.crop_end_x}, crop_size_y {self.crop_end_y}")
 
         self.crop = True
-        self.Load(text)
+        self.Load3D(text)
         self.crop = False
 
         # self.MakeBoundingBox()
         
-        self.viewer.window.qt_viewer.camera.center = (self.shape[0]/2, self.shape[1]/2, self.shape[2]/2 )
-        self.viewer.window.qt_viewer.camera.angles = angles
-        self.viewer.window.qt_viewer.camera.zoom = zoom
-
+        # self.viewer.camera.center = center
+        # self.viewer.camera.angles = angles
+        # self.viewer.camera.zoom   = zoom
+        # viewer.reset_view(margin=0.1, reset_camera_angle=False)
 
     def CropToRegion(self):
 
@@ -382,6 +396,8 @@ class CYTOSTUDIO:
         
         if any(i.name == 'crop box' for i in self.viewer.layers):
             self.viewer.layers.remove('crop box')
+            
+            
 
         output_resolution = float(self.pixel_size.text())
         data_length = len(self.viewer.layers['Shapes'].data[0])
@@ -444,8 +460,13 @@ class CYTOSTUDIO:
         self.viewer.layers.remove('Shapes')
         self.MakeBoundingBox()
         
-        self.viewer.window.qt_viewer.camera.center = (self.shape[0]/2, self.shape[1]/2, self.shape[2]/2 )
-
+        # self.viewer.camera.center = (
+        #     self.shape[0]/2,
+        #     self.shape[1]/2,
+        #     self.shape[2]/2,
+        # )
+        
+        self.viewer.reset_view()
 
           
     def set_image_slice_value(self):
@@ -544,7 +565,8 @@ class CYTOSTUDIO:
                     'colormap': layer.colormap.name,  # Colormap (if applicable)
                     'contrast_limits': layer.contrast_limits,  # Contrast settings
                     'blending': layer.blending,  # Blending mode
-                    'name': layer.name  # Layer name
+                    'name': layer.name,  # Layer name
+                    'visible': layer.visible  # <-- Add this line
                 }
 
                 # Remove the layer
@@ -555,7 +577,7 @@ class CYTOSTUDIO:
                 new_data = [im1, im2, im4, im8, im16, im32]
 
                 # Add a new layer with the same parameters as the old one
-                self.viewer.add_image(
+                new_layer = self.viewer.add_image(
                     new_data,
                     name=layer_params['name'],
                     scale=layer_params['scale'],
@@ -565,6 +587,9 @@ class CYTOSTUDIO:
                     contrast_limits=layer_params['contrast_limits'],
                     blending=layer_params['blending']
                 )
+                
+                # Restore visibility
+                new_layer.visible = layer_params['visible']
 
 
     def Remove_Regions(self, use_size):
@@ -636,7 +661,7 @@ class CYTOSTUDIO:
         shapes_layer = self.viewer.add_shapes(new_shape, shape_type='polygon', name = "Shapes", scale=(15, 15, 15),)
     
     def add_polygon(self):
-        self.viewer.window.qt_viewer.update()
+        # self.viewer.window.qt_viewer.update()
 
         output_resolution = float(self.pixel_size.text())
         
@@ -1434,7 +1459,7 @@ class CYTOSTUDIO:
                 self.ignore_gui_call = True;
                 self.scroll.setValue(0)
                 self.ignore_gui_call = False;
-                self.image_slice.setText("0")
+                self.image_slice.setText("1")
                 #self.slice_names = ds.attrs['cube_reg']['slice']
                 #self.scroll.setRange(0, len(self.slice_names))
 
@@ -1461,15 +1486,15 @@ class CYTOSTUDIO:
             self.ignore_gui_call = True;
             self.scroll.setValue(0)
             self.ignore_gui_call = False;
-            self.image_slice.setText("0")
+            self.image_slice.setText("1")
 
 
             
     def SetPerspective(self):
         if(self.cb_perspective.isChecked()):
-            self.viewer.window.qt_viewer.camera._3D_camera.fov = 45
+            viewer.camera.perspective = 45
         else:
-            self.viewer.window.qt_viewer.camera._3D_camera.fov = 0
+            viewer.camera.perspective = 0
             
     def MergeLayers(self):
         f1 = float(self.m_volume_1_multiplier.text())
@@ -1587,10 +1612,10 @@ class CYTOSTUDIO:
 
     def Load3D(self, text):
 
-        self.origin_x = 0
-        self.origin_y = 0
+        if not self.crop:
+            self.origin_x = 0
+            self.origin_y = 0
 
-        self.crop = False
         self.loaded_2D = False
         self.loaded_3D = True
         
@@ -1605,7 +1630,7 @@ class CYTOSTUDIO:
         
         print(f"Loading from folder -------------------------  {self.image_folder}")
         
-        self.optical_slices_available, self.value_range, self.shape, self.slice_spacing, self.optical_slices, self.output_resolution = self.data.Load3D(self.viewer, self.image_folder, self.comboBoxPath.currentText(), self.selected_channels, self.default_contrast_limits, self.thresholdN, self.channels_start, self.axio, self.old_method, self.overall_brightness, self.scroll, self.scroll_overall_brightness, self.pixel_size.text(), self.m_slice_spacing.text(), self.start_slice.text(), self.end_slice.text(), self.crop, self.crop_start_x, self.crop_end_x, self.crop_start_y, self.crop_end_y)
+        self.optical_slices_available, self.value_range, self.shape, self.slice_spacing, self.optical_slices, self.output_resolution = self.data.Load3D(self.viewer, self.image_folder, self.comboBoxPath.currentText(), self.selected_channels, self.default_contrast_limits, self.thresholdN, self.channels_start, self.axio, self.old_method, self.overall_brightness, self.scroll, self.scroll_overall_brightness, self.pixel_size.text(), self.m_slice_spacing.text(), self.start_slice.text(), self.end_slice.text(), self.crop, self.crop_start_x, self.crop_end_x, self.crop_start_y, self.crop_end_y, self.origin_x, self.origin_y)
         
         self.MakeBoundingBox()
         
@@ -1623,6 +1648,7 @@ class CYTOSTUDIO:
             layer.contrast_limits = contrast_limits
             
         self.viewer.scale_bar.unit = "um"
+        self.crop = False
             
             
     def on_visibility_changed(self):
@@ -1647,11 +1673,14 @@ class CYTOSTUDIO:
 
         self.viewer = napari.Viewer()
         # self.viewer = napari.Viewer(show_welcome=False)
-        self.viewer.theme = 'dark' 
-        
+        self.viewer.theme = 'dark'
         
         # Change the window icon (shown in title bar and taskbar)
-        app_icon = QtGui.QIcon('logo.ico')  # Can be .ico, .png, etc
+        # app_icon = QtGui.QIcon('logo.ico')  # Can be .ico, .png, etc
+        icon_data = pkgutil.get_data("cyto_studio", "icon.png")
+        pixmap = QPixmap()
+        pixmap.loadFromData(icon_data)
+        app_icon = QIcon(pixmap)
 
         # Set window icon
         self.viewer.window._qt_window.setWindowIcon(app_icon)
@@ -1679,17 +1708,25 @@ class CYTOSTUDIO:
                     if child.__class__.__name__ == 'QtWelcomeLabel':
                         child.setAutoFillBackground(False)
                         child.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-                        child.setText("cyto-studio")
+                        child.setText("")
+                        child.hide()
                         child.setStyleSheet("color: #ffffff; background: transparent;")
+                    elif child.text() == "Ctrl+O open image(s)":
+                        # Remove or hide the "Ctrl+O open image(s)" label
+                        child.setText("")
+                        # Alternatively, to hide the label completely:
+                        child.hide()
 
                     # Find and modify logo/image if it exists
                     if 'logo' in child.objectName().lower():
                         child.setAutoFillBackground(False)
                         child.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-                        child.setPixmap(QtGui.QPixmap('logo.png'))
+                        logo_path = os.path.join(os.path.dirname(cyto_studio.__file__), "logo.png")
+                        child.setPixmap(QtGui.QPixmap(logo_path))
                         child.setStyleSheet("color: #ffffff; background: transparent;")
         
         # self.viewer.window._qt_window.setStyleSheet("")
+        
 
         #self.viewer.window._qt_window.setStyleSheet(stylesheet)  # Ensure you apply to main window
         
@@ -1698,9 +1735,13 @@ class CYTOSTUDIO:
         # Get the existing stylesheet
         existing_stylesheet = self.viewer.window._qt_window.styleSheet()
         
+        
+
+        custom_stylesheet = pkgutil.get_data("cyto_studio", "custom.qss").decode("utf-8")
+        
         # Read the custom stylesheet from a file
-        with open("custom.qss", "r") as file:  # Replace with your actual file path
-            custom_stylesheet = file.read()
+        # with open("custom.qss", "r") as file:  # Replace with your actual file path
+        #     custom_stylesheet = file.read()
             
         # Combine the existing stylesheet with the custom one
         new_stylesheet = existing_stylesheet + "\n" + custom_stylesheet
@@ -1747,10 +1788,7 @@ class CYTOSTUDIO:
         hbox.addWidget(bSelectFolder)
         
         hbox.addStretch(1)
-        vbox.addLayout(hbox)
-        
-        
-        
+        vbox.addLayout(hbox)        
         
         hbox = QtWidgets.QHBoxLayout()
         self.comboBoxPath = ExtendedComboBox()
@@ -1807,7 +1845,7 @@ class CYTOSTUDIO:
         
         hbox = QtWidgets.QHBoxLayout()
         hbox.addWidget(QtWidgets.QLabel("Channels:"))
-        self.selected_slices = QtWidgets.QLineEdit("0-2,3")
+        self.selected_slices = QtWidgets.QLineEdit("1-3,4")
         self.selected_slices.setMaximumWidth(100)
         self.selected_slices.textChanged.connect(self.onSelectedSlicesTextChanged)
         hbox.addWidget(self.selected_slices)
@@ -2044,7 +2082,7 @@ class CYTOSTUDIO:
         self.scroll.valueChanged.connect(self.set_image_slice_value)
         hbox.addWidget(self.scroll)
 
-        self.image_slice = QtWidgets.QLineEdit("0")
+        self.image_slice = QtWidgets.QLineEdit("1")
         self.image_slice.setMaximumWidth(30)
         hbox.addWidget(self.image_slice)
 

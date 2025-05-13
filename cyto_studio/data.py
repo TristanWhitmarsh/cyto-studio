@@ -108,9 +108,9 @@ class Data:
 
 
 
-        scroll.setRange(0, (self.optical_slices_available*number_of_sections)-1)
+        scroll.setRange(1, (self.optical_slices_available*number_of_sections))
         optical_slice = 0
-        scroll.setValue(0)
+        scroll.setValue(1)
         z = 0
 
 
@@ -121,7 +121,7 @@ class Data:
 
             slice_names = self.ds1.attrs['cube_reg']['slice']
 
-            scroll.setRange(0, len(slice_names)-1)
+            scroll.setRange(1, len(slice_names))
             if z >= len(slice_names):
                 z = len(slice_names)-1
                 scroll.setValue(z)
@@ -424,7 +424,7 @@ class Data:
     
     
 
-    def Load3D(self, viewer, image_folder, comboBoxPath, selected_channels, default_contrast_limits, thresholdN, channels_start, axio, old_method, overall_brightness, scroll, scroll_overall_brightness, pixel_size, m_slice_spacing, start_slice, end_slice, crop, crop_start_x, crop_end_x, crop_start_y, crop_end_y):
+    def Load3D(self, viewer, image_folder, comboBoxPath, selected_channels, default_contrast_limits, thresholdN, channels_start, axio, old_method, overall_brightness, scroll, scroll_overall_brightness, pixel_size, m_slice_spacing, start_slice, end_slice, crop, crop_start_x, crop_end_x, crop_start_y, crop_end_y, origin_x, origin_y):
         random.seed(42)
         
         verbose = True
@@ -670,7 +670,7 @@ class Data:
 
 
         # Set perspective view which aids the navigation
-        viewer.window.qt_viewer.camera._3D_camera.fov = 45
+        # viewer.camera.perspective = 45
 
         # Store the output resolution in which this volume was loaded
         self.current_output_resolution = float(pixel_size)
@@ -746,6 +746,15 @@ class Data:
             end_slice_number = int(end_slice)
              
         
+        
+        if crop:
+            print(f"output_resolution: {output_resolution}")
+
+            size_x = int(math.floor((crop_end_x - crop_start_x) / output_resolution))
+            size_y = int(math.floor((crop_end_y - crop_start_y) / output_resolution))
+            start_x = int(math.floor(crop_start_x / output_resolution))
+            start_y = int(math.floor(crop_start_y / output_resolution))
+                    
 
         for chn in range(50):
             if chn in selected_channels:
@@ -865,6 +874,9 @@ class Data:
                             out = resampler.Execute(fixed)
 
                             resampled_slice = sitk.GetArrayFromImage(out)
+                            
+                            if crop:
+                                resampled_slice = resampled_slice[int(start_x):int(start_x+size_x), int(start_y):int(start_y+size_y)]
 
                             slices.append(resampled_slice)
 
@@ -872,25 +884,6 @@ class Data:
                     volume_1_temp = np.stack(slices, axis=0)
                     # print("Volume shape:", volume_1_temp.shape)
 
-
-                if crop:
-                    spacing_x = resolution*self.spacing[0]
-                    spacing_y = resolution*self.spacing[1]
-
-                    size_y = int(math.floor((crop_end_x - crop_start_x) / spacing_x))
-                    size_z = int(math.floor((crop_end_y - crop_start_y) / spacing_y))
-                    start_y = int(math.floor(crop_start_x / spacing_x))
-                    start_z = int(math.floor(crop_start_y / spacing_y))
-                else:
-                    # if axio:
-                    #     size_y = int(math.floor(volume_1_temp.shape[2]))
-                    #     size_z = int(math.floor(volume_1_temp.shape[3]))
-                    # else:
-                    size_y = int(math.floor(volume_1_temp.shape[1]))
-                    size_z = int(math.floor(volume_1_temp.shape[2]))
-                    start_y = 0
-                    start_z = 0
-                    
                 self.shape = volume_1_temp.shape
 
                 if verbose:
@@ -962,539 +955,3 @@ class Data:
         
         return self.optical_slices_available, self.value_range, self.shape, self.slice_spacing, self.optical_slices, output_resolution
     
-    
-    
-    
-    
-    
-    
-                
-
-#     def Load3D_old(self, viewer, image_folder, comboBoxPath, selected_channels, default_contrast_limits, thresholdN, channels_start, axio, old_method, overall_brightness, scroll, scroll_overall_brightness, pixel_size, m_slice_spacing, start_slice, end_slice, crop, crop_start_x, crop_end_x, crop_start_y, crop_end_y):
-#         random.seed(42)
-        
-#         verbose = True
-
-#         # Clear memory
-#         gc.collect()
-
-                  
-#         if verbose:
-#             print(f"folder location: " + image_folder)
-            
-        
-#         file_name = image_folder + str(comboBoxPath) + '/mos'
-#         default_contrast_limits = [0,30000]
-#         thresholdN.setText("1000")
-#         channels_start = 0
-#         if not os.path.exists(file_name):
-#             file_name = image_folder + str(comboBoxPath) + '/mos.zarr'
-#             default_contrast_limits = [0,30]
-#             thresholdN.setText("0.3")
-#             channels_start = 1
-#         print(file_name)
-
-#         # Try to read only the meta data using the consolidated flag as True
-#         # Currently not used
-#         try:
-#             self.ds1 = xr.open_zarr(file_name, consolidated=False)
-#             # print("not trying consolidated")
-#         except Exception:
-#             print("none-consolidated")
-#             self.ds1 = xr.open_zarr(file_name)
-            
-            
-            
-#         channel_names = self.ds1.coords['channel'].values.tolist()
-#         print(f"channel_names: {channel_names}")
-
-        
-#         # Read the image spacing
-#         try:
-#             self.spacing = [0,0,0]
-#             self.spacing[0] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["x"])
-#             self.spacing[1] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["y"])
-#             self.spacing[2] = 10 * float(json.loads(self.ds1['S001'].attrs['scale'])["z"])
-
-#             if verbose:
-#                 print(f"spacing ({self.spacing[0]}, {self.spacing[1]}, {self.spacing[2]})")
-
-#         except Exception:
-
-#             self.spacing = (self.ds1['S001'].attrs['scale'])
-
-#             print(f"spacing ({self.spacing[0]}, {self.spacing[1]})")
-            
-            
-                
-#         if verbose:
-#             print(f"spacing ({self.spacing[0]}, {self.spacing[1]})")
-
-#         # Read the parameters to convert the voxel values (bscale and bzero)
-#         if self.old_method:
-#             self.bscale = self.ds1.attrs['bscale']
-#             self.bzero = self.ds1.attrs['bzero']
-#         else:
-#             try:
-#                 self.bscale = self.ds1['S001'].attrs['bscale']
-#                 self.bzero = self.ds1['S001'].attrs['bzero']
-#             except:
-#                 self.bscale = 1
-#                 self.bzero = 0
-
-#         if verbose:
-#             print(f"bscale {self.bscale}, bzero {self.bzero}")
-
-
-#         # Get number of sections
-#         if axio:
-#             self.number_of_sections = len(list(self.ds1))
-
-        
-#         self.number_of_sections = len(list(self.ds1))
-#         if verbose:
-#             print(f"Number of sections: {self.number_of_sections}")
-            
-
-#         # Read the translation values
-#         if self.old_method:
-#             self.align_x = self.ds1.attrs['cube_reg']['abs_dx']
-#             self.align_y = self.ds1.attrs['cube_reg']['abs_dy']
-#         else:
-#             self.align_x = []
-#             self.align_y = []
-
-#             for z in range(0, self.number_of_sections):
-#                 # slice_name = f"S{(z+1):03d}"
-#                 # self.align_x.append(self.ds1[slice_name].attrs['offsets']['x'])
-#                 # self.align_y.append(self.ds1[slice_name].attrs['offsets']['y'])
-#                 self.align_x.append(0)
-#                 self.align_y.append(0)
-
-#         if verbose:
-#             print(f"align_x {self.align_x}")
-#             print(f"align_y {self.align_y}")
-        
-
-#         # User defined output pixel size
-#         output_resolution = float(pixel_size)
-
-#         if verbose:
-#             print(f"output pixel size {output_resolution}")
-
-
-#         # Calculate at which resolution the image should be read based on the image spacing and output pixel size
-#         resolution = 32
-#         index = 5
-#         if (output_resolution / 0.5) < 32:
-#             resolution = 16
-#             index = 4
-#         if (output_resolution / 0.5) < 16:
-#             resolution = 8
-#             index = 3
-#         if (output_resolution / 0.5) < 8:
-#             resolution = 4
-#             index = 2
-#         if (output_resolution / 0.5) < 4:
-#             resolution = 2
-#             index = 1
-#         if (output_resolution / 0.5) < 2:
-#             resolution = 1
-#             index = 0
-
-#         if verbose:
-#             print(f"loading at resolution {resolution} with index {index}")
-        
-#         try:
-#             gr = self.ds1.attrs["multiscale"]['datasets'][index]['path']
-#             ds = xr.open_zarr(file_name, group=gr)
-#         except:
-#             try:
-#                 gr = json.loads(self.ds1.attrs["multiscale"])['datasets'][index]['path']
-#                 ds = xr.open_zarr(file_name, group=gr)
-#             except:
-#                 ds = xr.open_zarr(file_name, group='l.{0:d}'.format(resolution))
-
-                
-#         # Get the number of optical slices that are available
-#         if axio:
-#             self.optical_slices_available = 1
-#         else:
-#             self.optical_slices_available = len(ds.z)
-
-#         if verbose:
-#             print(f"optical slices available: {self.optical_slices_available}")
-        
-#         # Slice spacing given by the user, which should be extracted from the file name
-#         self.slice_spacing = float(m_slice_spacing)
-
-#         # Get the optical slice spacing
-#         if self.old_method or axio:
-#             # assume that the optical slices do not overlap
-#             optical_section_spacing = self.slice_spacing / self.optical_slices_available
-#         else:
-#             try:
-#                 optical_section_spacing = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['optical_section_spacing'])
-#             except:
-#                 try:
-#                     optical_section_spacing = float(json.loads(self.ds1['S001'].attrs['raw_meta'])['zres'])
-#                 except:
-#                     optical_section_spacing = 1
-
-
-#         if verbose:
-#             print(f"optical_slices zres: {optical_section_spacing}")
-
-
-#         # Calculate how many optical slices to use
-#         if self.optical_slices_available > 1:
-#             expected_nr_of_slices = round(self.slice_spacing / optical_section_spacing)
-#             if self.optical_slices_available > expected_nr_of_slices:
-#                 self.optical_slices = expected_nr_of_slices
-#             else:
-#                 self.optical_slices = self.optical_slices_available
-#         else:
-#             self.optical_slices = 1
-
-
-#         # Get slice names
-#         if self.old_method:
-#             self.slice_names = self.ds1.attrs['cube_reg']['slice']
-#         else:
-#             self.slice_names = []
-#             for z in range(0, self.number_of_sections):
-#                 slice_name = f"S{(z+1):03d}"
-#                 for i in range(0, self.optical_slices):
-#                     self.slice_names.append(slice_name)
-        
-#         if verbose:
-#             print(f"slice names: {self.slice_names}")
-
-
-#         if verbose:
-#             print(f"number of optical slices used: {self.optical_slices}")
-
-#         # Make copies of the translations for all the optical slices used
-#         if self.old_method:
-#             self.corrected_align_x = self.align_x
-#             self.corrected_align_y = self.align_y
-#         else:
-#             self.corrected_align_x = []
-#             for index, value in enumerate(self.align_x):
-#                 for i in range(0,self.optical_slices):
-#                     self.corrected_align_x.append(value)
-
-#             self.corrected_align_y = []
-#             for index, value in enumerate(self.align_y):
-#                 for i in range(0,self.optical_slices):
-#                     self.corrected_align_y.append(value)
-
-
-#         if verbose:
-#             print(f"There are {len(self.corrected_align_x)} translations")
-
-#         # Set perspective view which aids the navigation
-#         viewer.window.qt_viewer.camera._3D_camera.fov = 45
-
-#         # Store the output resolution in which this volume was loaded
-#         self.current_output_resolution = float(pixel_size)
-
-#         # Define start slice
-#         if start_slice == "":
-#             start_slice_number = 0
-#             chop_bottom = 0
-#         else:
-#             start_slice_number = int(math.floor(float(start_slice)/float(self.optical_slices)))
-#             chop_bottom = int(start_slice) - (self.optical_slices * start_slice_number) 
-
-#         # Define end slice
-#         if end_slice == "":
-#             end_slice_number = self.number_of_sections-1
-#             chop_top = 0
-#         else:
-#             end_slice_number = int(math.floor(float(end_slice)/float(self.optical_slices)))
-#             chop_top = (self.optical_slices * (end_slice_number + 1) -1) - int(end_slice) 
-
-#         # Define number of slices
-#         number_of_slices = end_slice_number - start_slice_number + 1
-#         if verbose:
-#             print(f"number_of_slices {number_of_slices}")
-            
-            
-#         # Parse the selected channels
-#         # selected_channels = parse_channel_input(selected_slices)
-#         if verbose:
-#             print("Selected channels:", selected_channels)
-            
-#         number_of_channels = len(selected_channels)
-#         if verbose:
-#             print("Number of channels:", number_of_channels)
-
-#         spacing_loaded = [float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution]
-
-#         for chn in range(50):
-#             if chn in selected_channels:
-#                 print(f"loading channel {chn}")
-                
-#                 if axio:
-#                     try:
-#                         volume_1_temp = (ds.sel(type='mosaic').to_array(
-#                         ).data * self.bscale + self.bzero).astype(dtype=np.float32)
-#                         volume_1_temp = volume_1_temp[:,chn,:,:]
-#                     except Exception as e:
-#                         if verbose:
-#                             print("An error occurred:", str(e))
-#                         volume_1_temp = (ds.to_array(
-#                         ).data * self.bscale + self.bzero).astype(dtype=np.float32)
-#                         volume_1_temp = volume_1_temp[:,chn,:,:]
-#                 else:
-#                     try:
-#                         volume_1_temp = (ds.sel(type='mosaic', z=0).to_array(
-#                         ).data * self.bscale + self.bzero).astype(dtype=np.float32)
-#                         volume_1_temp = volume_1_temp[:,chn,:,:]
-#                     except Exception as e:
-#                         if verbose:
-#                             print("An error occurred:", str(e))
-#                         try:
-#                             volume_1_temp = (ds.sel(z=0).to_array(
-#                             ).data * self.bscale + self.bzero).astype(dtype=np.float32)
-#                             volume_1_temp = volume_1_temp[:,chn,:,:]
-#                         except Exception as e:
-#                             if verbose:
-#                                 print("An error occurred:", str(e))
-#                             print("skipping this channel since it can't be read")
-#                             continue
-
-                
-
-#                 if crop:
-#                     spacing_x = resolution*0.1*self.spacing[0]
-#                     spacing_y = resolution*0.1*self.spacing[1]
-
-#                     size_y = int(math.floor((crop_end_x - crop_start_x) / spacing_x))
-#                     size_z = int(math.floor((crop_end_y - crop_start_y) / spacing_y))
-#                     start_y = int(math.floor(crop_start_x / spacing_x))
-#                     start_z = int(math.floor(crop_start_y / spacing_y))
-#                 else:
-#                     if axio:
-#                         size_y = int(math.floor(volume_1_temp.shape[2]))
-#                         size_z = int(math.floor(volume_1_temp.shape[3]))
-#                     else:
-#                         size_y = int(math.floor(volume_1_temp.shape[1]))
-#                         size_z = int(math.floor(volume_1_temp.shape[2]))
-#                     start_y = 0
-#                     start_z = 0
-
-#                 volume_1 = np.zeros((self.optical_slices*number_of_slices, size_y, size_z), dtype=np.float32)
-
-#                 if number_of_slices != volume_1_temp[start_slice_number:end_slice_number+1, start_y:start_y+size_y, start_z:start_z+size_z].shape[0]:
-#                     msg = QMessageBox()
-#                     msg.setIcon(QMessageBox.Critical)
-#                     msg.setText("One or more slices appear to be missing")
-#                     msg.setInformativeText("Find the missing slice(s) by using the Load slice function and " \
-#     "scrolling through the slices until an error message is displayed. " \
-#     "Then set a Slices range to avoid this slice.")
-#                     msg.setWindowTitle("Error")
-#                     msg.setStandardButtons(QMessageBox.Ok)
-#                     retval = msg.exec_()
-#                     return
-
-#                 volume_1[0::self.optical_slices, :, :] = volume_1_temp[start_slice_number:end_slice_number+1, start_y:start_y+size_y, start_z:start_z+size_z]
-
-#                 for optical_slice in range(1, self.optical_slices):
-#                     try:
-#                         volume_1_temp = (ds.sel(channel=channels_start, type='mosaic', z=optical_slice).to_array(
-#                         ).data * self.bscale + self.bzero).astype(dtype=np.float32)
-#                     except:
-#                         volume_1_temp = (ds.sel(channel=channels_start, z=optical_slice).to_array(
-#                         ).data * self.bscale + self.bzero).astype(dtype=np.float32)
-
-#                     volume_1[optical_slice::self.optical_slices, :, :] = volume_1_temp[start_slice_number:end_slice_number+1, start_y:start_y+size_y, start_z:start_z+size_z]
-
-#                 print("aligning")
-#                 aligned_1 = self.Align(volume_1, resolution, output_resolution, start_slice_number*self.optical_slices, self.spacing, str(comboBoxPath))
-#                 #aligned_1 = volume_1
-
-#                 aligned_1 = aligned_1[chop_bottom:aligned_1.shape[0]-chop_top,:,:]
-#                 self.shape = aligned_1.shape
-
-#                 if verbose:
-#                     print(f"self.shape {self.shape}")
-
-#                 if chn==0:
-#                     color_map='bop purple'
-#                 elif chn==1:
-#                     color_map='red'
-#                 elif chn==2:
-#                     color_map='green'
-#                 elif chn==3:
-#                     color_map='blue'
-#                 elif chn==4:
-#                     color_map='yellow'
-#                 elif chn==5:
-#                     color_map='magenta'
-#                 elif chn==6:
-#                     color_map='cyan'
-#                 elif chn==7:
-#                     color_map='bop orange'
-#                 elif chn==8:
-#                     color_map='bop blue'
-#                 elif chn==9:
-#                     color_map='bop purple'
-#                 else:
-#                     # Generate a random hue value between 0 and 1 (representing the entire spectrum)
-#                     random_hue = random.uniform(0, 1)
-
-#                     # Convert the hue value to an RGB color
-#                     rgb_color = colorsys.hsv_to_rgb(random_hue, 1, 1)
-
-#                     color_map= vispy.color.Colormap([[0.0, 0.0, 0.0], [rgb_color[0], rgb_color[1], rgb_color[2]]])
-
-#                 channel_name = channel_names[chn]
-
-#                 if any(i.name == channel_name for i in viewer.layers):
-#                     viewer.layers.remove(channel_name)
-                    
-                
-#                 min_value = volume_1.min()
-#                 if min_value < 0:
-#                     min_value = 0
-#                 max_value = volume_1.max()
-                
-#                 self.value_range = [min_value, max_value]
-                
-#                 self.overall_brightness = number_of_channels * (1.01 - (float(scroll_overall_brightness.value()) / 1000))
-#                 contrast_limits = [self.value_range[0],self.value_range[1]*self.overall_brightness]
-                
-
-#                 # viewer.add_image([aligned_1], name=channel_name, scale=(float(self.slice_spacing)/float(self.optical_slices) / output_resolution, 1, 1), 
-#                 #                       blending='additive', colormap=color_map, contrast_limits=contrast_limits, scale=self.spacing)
-
-#                 viewer.add_image([aligned_1], name=channel_name, scale=(float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution), 
-#                                       blending='additive', colormap=color_map, contrast_limits=contrast_limits)
-
-#                 self.shape = aligned_1.shape
-
-        
-#         return self.optical_slices_available, self.value_range, self.shape, self.slice_spacing, self.optical_slices, output_resolution
-    
-    
-
-
-#     def read_zarr(zarr_file, pan_img):
-
-#         # Read date for each acquisition
-#         ds = xr.open_zarr(zarr_file)
-#         print(ds)
-#         q_ids = ds.attrs['meta'][0]['acquisitions']
-#         ds_q = []
-#         for q_id in q_ids:
-#             ds_q.append(
-#                 xr.open_zarr(zarr_file, group=q_id)
-#             )
-
-#         # show info about acquisitions
-#         for q_id, q_ds in zip(q_ids, ds_q):
-#             print('Acquisition: {}'.format(q_id))
-#             q_meta = q_ds.attrs['meta']
-#             print('\tData source: {}'.format(q_meta[0]['q_data_source']))
-#             print('\tWidth (meta): {}'.format(q_meta[0]['q_maxx']))
-#             print('\tHeight (meta): {}'.format(q_meta[0]['q_maxy']))
-#             if q_meta[0]['q_data_source'] != 'invalid':
-#                 print('\tWidth (actual): {}'.format(q_meta[0]['q_width']))
-#                 print('\tHeight (actual): {}'.format(q_meta[0]['q_height']))
-
-#         # Get panorama coordinates
-#         pan_id = 1 # Panaorama index not ID, so for Panorama_2, pan_id is 1#
-
-#         pan_meta = ds.attrs['meta'][0]['panoramas'][pan_id]
-#         pan_p1 = (int(float(pan_meta['SlideX1PosUm'])), int(float(pan_meta['SlideY1PosUm'])))
-#         pan_p3 = (int(float(pan_meta['SlideX3PosUm'])), int(float(pan_meta['SlideY3PosUm'])))
-#         pan_scale_factor = float(pan_meta['PixelScaleCoef'])
-#         pan_w = int((pan_p3[0] - pan_p1[0]) * pan_scale_factor)
-#         pan_h = int((pan_p1[1] - pan_p3[1]) * pan_scale_factor)
-#         pan_coords = (pan_p1[0], pan_p1[1], pan_w, pan_h)
-#         # print(pan_coords)
-
-
-#         # Get coordinates for each roi
-#         q_coords = []
-#         for qd in ds_q:
-#             if 'q_width' in qd.attrs['meta'][0]:
-#                 q_coords.append((
-#                     int(qd.attrs['meta'][0]['q_stage_x']), int(qd.attrs['meta'][0]['q_stage_y']),
-#                     qd.attrs['meta'][0]['q_width'], qd.attrs['meta'][0]['q_height']))
-#             else:
-#                 q_coords.append((0, 0, 0, 0))
-#         # print(q_coords)
-
-#         # Map roi coordinates onto the panorama snapshot
-#         n_rois = len(q_coords)
-#         for i in range(n_rois):
-#             r = q_coords[i]
-#             # print('befor {}'.format(q_coords[i]))
-#             if r[2] != 0:
-#                 q_coords[i] = (r[0]-pan_coords[0], pan_coords[1]-r[1], r[2], r[3])
-#             # print('after {}'.format(q_coords[i]))
-
-
-
-#         # Render acquisitions for a selective channel  
-#         acq_idx = 0
-#         #ch = 'Pt(192)' # channel index or metal name
-#         ch = 'Sm(149)' # channel index or metal name
-
-#         if type(ch) == str:
-#             ch = get_channel_index(ds_q[acq_idx].attrs['meta'][0]['q_channels'], ch)
-#             if not ch:
-#                 raise Exception('Channel name was not found in the channel list')
-
-#         #np.array(ds_q[acq_idx][q_ids[acq_idx]][ch])
-
-#         # ch_data = ds_q[acq_idx][q_ids[acq_idx]].values[ch, :, :] # reads data for all channels before passing the selected channel
-#         ch_data = np.array(ds_q[acq_idx][q_ids[acq_idx]][ch])
-
-#         cdf, bin_centers = exposure.cumulative_distribution(ch_data)
-#         ch_data_equalised = np.interp(ch_data, bin_centers, cdf)
-#         ch_data_equalised = 100 * normalize_image(ch_data_equalised)
-
-#         print(ch_data_equalised.shape)
-#         print(np.min(ch_data))
-#         print(np.max(ch_data))
-#         print(np.min(ch_data_equalised))
-#         print(np.max(ch_data_equalised))
-
-#         #ch_data_equalised = normalize_image(ch_data_equalised)
-#         #pan_img = normalize_image(pan_img)
-#         print(ch_data_equalised.shape)
-
-#         ax = plt.gca()
-#         roi_idx = 0
-#         colors = ['r', 'b', 'g', 'y', 'm', 'c', 'orange']
-#         for cor in q_coords:
-#             # print(cor)
-#             if cor[2] == 0:
-#                 continue
-#             col = colors[(roi_idx+1)%len(colors)-1]
-#             #rect = patches.Rectangle((cor[0], cor[1]), cor[2], cor[3], linewidth=3, edgecolor=col, facecolor='none')
-#             #print(rect)
-#             pan_img[cor[1]:cor[1]+cor[3], cor[0]:cor[0]+cor[2]] = ch_data_equalised
-
-#             # ax.add_patch(rect)
-#             #ax.add_artist(rect)
-#             cx = cor[0] + cor[2] / 2.0
-#             cy = cor[1] + cor[3] / 2.0
-#             #ax.annotate(q_ids[roi_idx], (cx, cy), color=col, weight='bold')
-#             roi_idx += 1
-
-
-#         #plt.figure(figsize = (10,10))
-#         plt.imshow(pan_img, interpolation='none')
-#         plt.axis('off')  # Turn off axis labels and ticks
-#         plt.show()
-
-#         return pan_img
-    
-    
-#     def LoadIMC2D(self, viewer, image_folder, comboBoxPath, selected_channels, default_contrast_limits, thresholdN, channels_start, axio, old_method, overall_brightness, scroll, scroll_overall_brightness:
-#         read_zarr(image_folder, pan_img)
