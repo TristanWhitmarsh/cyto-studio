@@ -24,8 +24,8 @@ with open(os.path.join(HERE, "README.md")) as fid:
 
 # This call to setup() does all the work
 setup(
-    name="cyto-studio",
-    version="0.1.17",
+    name="cyto_studio",
+    version="0.2.27",
     description="napari viewer which can read multiplex images as zarr files",
     long_description=README,
     long_description_content_type="text/markdown",
@@ -43,17 +43,20 @@ setup(
         "cyto_studio": ["custom.qss", "icon.png", "logo.png"],
     },
     install_requires=[
-        'napari[pyside2]==0.4.17',
+        'napari[pyside2]==0.5.6',
         'PySide2==5.15.2.1',
         'xarray==2023.4.2',
         'zarr==2.14.2',
         'SimpleITK==2.2.1',
-        'napari-animation==0.0.7',
+        'napari-animation==0.0.8',
         'tifffile==2023.4.12',
         'pyarrow==19.0.1',
         'opencv-python-headless>=4.5.1.48',
         'numpy==1.23.5',
         'pydantic==1.10.15',
+        'geopandas==1.0.1',
     ],
-    entry_points={"console_scripts": ["cyto-studio=cyto_studio.__main__:main"]},
+    entry_points={
+        "console_scripts": ["cyto-studio=cyto_studio.__main__:main"]
+    },
 )

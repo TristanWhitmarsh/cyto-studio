@@ -7,10 +7,18 @@ Start -> Anaconda3 (64-bit) -> Anaconda Prompt (Anaconda3)
 
 Type:
 
-    >conda create -n py37 python=3.7
+    >conda create -n py39 python=3.9
 
-    >conda activate py37
+    >conda activate py39
 
+    >pip install cyto-studio --upgrade
+    
+or:
+
+    >mkenv cyto-studio --python /soft/conda/envs/napari/bin/python
+    
+    >workon cyto-studio
+    
     >pip install cyto-studio --upgrade
     
 ## Installation Linux
@@ -20,6 +28,12 @@ Applications -> Terminal Emulator
 Type:
 
     >pip install cyto-studio --upgrade
+    
+## Create the launcher
+
+Type:
+
+    >cyto-studio --create-launcher
 
 
 ## How to run
