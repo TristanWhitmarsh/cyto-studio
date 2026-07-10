@@ -1,6 +1,6 @@
 import sys
 import os
-import pkg_resources
+from importlib.metadata import distribution, PackageNotFoundError
 
 
 def create_launcher() -> int:
@@ -44,13 +44,13 @@ source "{venv_activate_path}"
 unset LD_LIBRARY_PATH
 unset QT_PLUGIN_PATH
 unset QML2_IMPORT_PATH
-export QT_API=pyside2
+export QT_API=pyside6
 
 # If you need NVIDIA libs for vglrun, add them back explicitly:
 export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 
-# Ensure PySide2's Qt libs are found first
-PYSIDE_LIB_PATH=$(python -c "import site, os; print(os.path.join(site.getsitepackages()[0], 'PySide2', 'Qt', 'lib'))")
+# Ensure PySide6's Qt libs are found first
+PYSIDE_LIB_PATH=$(python -c "import site, os; print(os.path.join(site.getsitepackages()[0], 'PySide6', 'Qt', 'lib'))")
 export LD_LIBRARY_PATH="$PYSIDE_LIB_PATH:$LD_LIBRARY_PATH"
 
 echo "[cyto-studio] Trying VirtualGL launch: vglrun cyto-studio"
@@ -109,24 +109,38 @@ def main() -> int:
     if "--create-launcher" in sys.argv:
         return create_launcher()
 
+    # Ensure Qt bindings resolve to PySide6 (Qt6) before napari/qtpy import.
+    os.environ.setdefault("QT_API", "pyside6")
+
+    # On Windows, set an explicit AppUserModelID before the GUI is created so the
+    # taskbar/title-bar shows the app's own icon instead of the generic Python icon.
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "TristanWhitmarsh.cyto-studio"
+            )
+        except Exception:
+            pass
+
     # Runtime guard against opencv-python (Qt conflicts)
     try:
-        pkg_resources.get_distribution("opencv-python")
+        distribution("opencv-python")
         print(
-            "\n[cyto-studio] Detected 'opencv-python', which is incompatible with napari and PySide2.\n"
+            "\n[cyto-studio] Detected 'opencv-python', which is incompatible with napari and PySide6.\n"
             "This can cause Qt-related crashes or weird behavior.\n"
             "\nTo fix this, run:\n"
             "    pip uninstall opencv-python\n"
-            "    pip install numpy==1.23.5 opencv-python-headless==4.10.0.82\n"
+            "    pip install opencv-python-headless\n"
         )
         return 1
-    except pkg_resources.DistributionNotFound:
+    except PackageNotFoundError:
         pass
 
     # GUI code
     from cyto_studio.cyto_studio import CYTOSTUDIO
 
-    print("Using PySide2")
+    print("Using PySide6")
     napari = CYTOSTUDIO()
     napari.main()
     return 0

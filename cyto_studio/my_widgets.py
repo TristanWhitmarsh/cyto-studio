@@ -11,11 +11,11 @@ import re
 #     from qtpy.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea,
 #                                 QComboBox, QCheckBox, QListWidget, QListWidgetItem, QMessageBox, QFileDialog, QMainWindow)
 # else:
-print("Using PySide2")
-from PySide2 import QtCore, QtWidgets, QtGui
-from PySide2.QtCore import Qt, QSortFilterProxyModel
-from PySide2.QtGui import QColor, QPixmap, QIcon, QStandardItemModel, QStandardItem, QPainter, QFont
-from PySide2.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea,
+print("Using PySide6")
+from PySide6 import QtCore, QtWidgets, QtGui
+from PySide6.QtCore import Qt, QSortFilterProxyModel
+from PySide6.QtGui import QColor, QPixmap, QIcon, QStandardItemModel, QStandardItem, QPainter, QFont
+from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea,
                                QComboBox, QCheckBox, QListWidget, QListWidgetItem, QMessageBox, QFileDialog, QMainWindow, QCompleter)
 
 
@@ -135,10 +135,6 @@ class CustomComboBox(QtWidgets.QComboBox):
 class LegendWidget(QWidget):
     def __init__(self):
         super().__init__()
-        self.setAutoFillBackground(True)
-        p = self.palette()
-        p.setColor(self.backgroundRole(), Qt.black)  # Set the widget's background to black
-        self.setPalette(p)
 
         self.layout = QVBoxLayout(self)  # Set the main layout for the widget
 
@@ -196,9 +192,8 @@ class LegendWidget(QWidget):
             # name_str2 = re.sub(r'\d+\s*', '', name_str, count=1)
             # if name_str2 == "" or name_str2 == " ":
             #     name_str2 = name_str
-            
+
             text_label = QLabel(name_str2)
-            text_label.setStyleSheet("QLabel { color : white; }")
 
             channel_layout.addWidget(color_label)
             channel_layout.addWidget(text_label)
@@ -287,11 +282,11 @@ class LegendWidget(QWidget):
         
 # import numpy as np
 
-# from PySide2.QtWidgets import (
+# from PySide6.QtWidgets import (
 #     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFrame, QLabel,
 #     QComboBox, QLineEdit, QPushButton, QRadioButton, QGroupBox, QMessageBox
 # )
-# from PySide2.QtCore import Qt
+# from PySide6.QtCore import Qt
 
 # from stardist.models import StarDist2D
 # from csbdeep.utils import normalize

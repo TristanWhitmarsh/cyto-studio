@@ -36,13 +36,13 @@ import colorsys
 #                                 QComboBox, QCheckBox, QListWidget, QListWidgetItem, QMessageBox, QFileDialog, QMainWindow)
 # else:
 #print("Using PySide2")
-from PySide2 import QtCore, QtWidgets, QtGui
-from PySide2.QtCore import Qt, QSortFilterProxyModel
-from PySide2.QtGui import QColor, QPixmap, QIcon, QStandardItemModel, QStandardItem, QPainter, QFont, QPalette, QColor
-from PySide2.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea,
+from PySide6 import QtCore, QtWidgets, QtGui
+from PySide6.QtCore import Qt, QSortFilterProxyModel
+from PySide6.QtGui import QColor, QPixmap, QIcon, QStandardItemModel, QStandardItem, QPainter, QFont, QPalette, QColor
+from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea,
                                QComboBox, QCheckBox, QListWidget, QListWidgetItem, QMessageBox, QFileDialog, QMainWindow)
-from PySide2.QtWidgets import QLabel
-from PySide2.QtCore import QTimer
+from PySide6.QtWidgets import QLabel
+from PySide6.QtCore import QTimer
 
 import SimpleITK as sitk
 from scipy import ndimage, stats
@@ -373,7 +373,7 @@ class CYTOSTUDIO:
 
         export_btn.clicked.connect(do_export)
 
-        dialog.exec_()
+        dialog.exec()
         
     def setup_export_screenshot_menu(self):
         main_window = self.viewer.window._qt_window
@@ -387,7 +387,7 @@ class CYTOSTUDIO:
                 file_menu = menu
                 break
         
-        action_export_screenshot = QtWidgets.QAction("Export Screenshot…", main_window)
+        action_export_screenshot = QtGui.QAction("Export Screenshot…", main_window)
         action_export_screenshot.triggered.connect(self.export_screenshot_dialog)
 
         # Find 'Open Sample' (or similar) in File menu
@@ -427,7 +427,7 @@ class CYTOSTUDIO:
                 break
 
         # Create the action
-        action_load_geojson = QtWidgets.QAction("Load GeoJSON…", main_window)
+        action_load_geojson = QtGui.QAction("Load GeoJSON…", main_window)
         action_load_geojson.triggered.connect(self.load_geojson_from_menu)
 
         # Find 'Open Sample' (or similar) in File menu
@@ -916,10 +916,20 @@ class CYTOSTUDIO:
             optical_slice = (self.scroll.value() - 1) % self.optical_slices_available
             z = math.floor((self.scroll.value() - 1) / self.optical_slices_available)
 
-        channel_names = self.data.ds1.coords['channel'].values.tolist()
+        if self.data.is_sd:
+            channel_names = self.data.sd.channel_names
+        else:
+            channel_names = self.data.ds1.coords['channel'].values.tolist()
 
 
-        if self.old_method:
+        if self.data.is_sd:
+            self.bscale = 1
+            self.bzero = 0
+            self.slice_names = self.data.sd.sections
+            if z >= len(self.slice_names):
+                z = len(self.slice_names) - 1
+            slice_name = self.slice_names[z]
+        elif self.old_method:
             self.bscale = self.data.ds1.attrs['bscale']
             self.bzero = self.data.ds1.attrs['bzero']
             self.slice_names = self.data.ds1.attrs['cube_reg']['slice']
@@ -932,24 +942,34 @@ class CYTOSTUDIO:
                 self.bscale = 1
                 self.bzero = 0
             slice_name = f"S{(z+1):03d}"
-        
-        try:
-            self.slice_names = list(self.data.ds1.keys())
-            slice_name = self.slice_names[z]
-            
+
+        if not self.data.is_sd:
             try:
-                bscale = self.data.ds1[slice_name].attrs['bscale']
-                bzero = self.data.ds1[slice_name].attrs['bzero']
+                self.slice_names = list(self.data.ds1.keys())
+                slice_name = self.slice_names[z]
+
+                try:
+                    bscale = self.data.ds1[slice_name].attrs['bscale']
+                    bzero = self.data.ds1[slice_name].attrs['bzero']
+                except:
+                    pass
             except:
                 pass
-        except:
-            pass
 
         for chn in range(len(channel_names)):
             channel_name = channel_names[chn]
             if not str(channel_name) in [str(layer.name) for layer in self.viewer.layers]:
                 continue
             if chn in self.selected_channels:
+                if self.data.is_sd:
+                    # SpatialData: swap in the pyramid for the newly scrolled section.
+                    new_data = self.data.sd.multiscale_planes(slice_name, chn)
+                    layer = self.viewer.layers[str(channel_name)]
+                    layer.events.block()
+                    layer.data = new_data
+                    layer.events.unblock()
+                    del new_data
+                    continue
                 try:
                     # Prepare Dask/xarray objects, do not convert to NumPy!
                     im1 = (self.data.ds1[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
@@ -1743,11 +1763,14 @@ class CYTOSTUDIO:
 
     def _check_zarr_folder(self, path, base_path):
         """
-        Check if a directory is a Zarr folder (mos or mos.zarr).
+        Check if a directory is a loadable dataset: a legacy STPT Zarr folder
+        (mos or mos.zarr) or a SpatialData (zarr v3) store.
         Return a list containing the relative path from base_path.
         """
+        from .spatialdata_reader import is_spatialdata
         if os.path.exists(os.path.join(path, "mos.zarr")) or \
-           os.path.exists(os.path.join(path, "mos")):
+           os.path.exists(os.path.join(path, "mos")) or \
+           is_spatialdata(path):
             rel_path = os.path.relpath(path, base_path).strip('/')
             return [rel_path]
         return []
@@ -1794,7 +1817,25 @@ class CYTOSTUDIO:
             
         slice_spacing = self.extract_um_number(str(self.comboBoxPath.currentText()))
         self.m_slice_spacing.setText(str(slice_spacing))
-        
+
+        # SpatialData store: populate channels from OME metadata and stop here.
+        from .spatialdata_reader import is_spatialdata, spatialdata_channel_names
+        full_path = os.path.join(self.image_folder, str(self.comboBoxPath.currentText()))
+        if is_spatialdata(full_path):
+            channel_names = spatialdata_channel_names(full_path)
+            print(f"SpatialData channels: {channel_names}")
+            self.comboBox.clearItems()
+            for name in channel_names:
+                self.comboBox.addItem(str(name))
+            selected_channels = parse_channel_input(self.selected_slices.text())
+            for i in range(len(channel_names)):
+                self.comboBox.checkItem(i, i in selected_channels)
+            self.ignore_gui_call = True
+            self.scroll.setValue(0)
+            self.ignore_gui_call = False
+            self.image_slice.setText("1")
+            return
+
         if os.path.exists(file_name + '/.zmetadata'):
             print("metadata is available")
             try:
@@ -2138,12 +2179,61 @@ class CYTOSTUDIO:
         import gc
         gc.collect()
             
+    def _set_center_panel_background(self):
+        """Keep only the napari image canvas and startup panel black."""
+        try:
+            canvas = self.viewer.window._qt_viewer.canvas
+            canvas.bgcolor = 'black'
+
+            native_canvas = getattr(canvas, "native", None)
+            if native_canvas is not None:
+                native_canvas.setAutoFillBackground(True)
+                palette = native_canvas.palette()
+                palette.setColor(native_canvas.backgroundRole(), QColor(0, 0, 0))
+                native_canvas.setPalette(palette)
+                native_canvas.setStyleSheet("background-color: #000000;")
+        except Exception:
+            pass
+
+        for widget in self.viewer.window._qt_window.findChildren(QtWidgets.QWidget):
+            if widget.__class__.__name__ != 'QtWelcomeWidget':
+                continue
+
+            widget.setAutoFillBackground(True)
+            widget.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
+            palette = widget.palette()
+            palette.setColor(widget.backgroundRole(), QColor(0, 0, 0))
+            widget.setPalette(palette)
+            widget.setStyleSheet("background-color: #000000;")
+
+            for child in widget.findChildren(QtWidgets.QWidget):
+                child.setAutoFillBackground(False)
+                child.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
+
+            for label in widget.findChildren(QtWidgets.QLabel):
+                label.setStyleSheet(
+                    label.styleSheet()
+                    + " color: #ffffff; background: transparent;"
+                )
+            
+    def _set_center_panel_background_after_theme_change(self, event=None):
+        QtCore.QTimer.singleShot(0, self._set_center_panel_background)
+        QtCore.QTimer.singleShot(100, self._set_center_panel_background)
+
+    def _keep_center_panel_background_on_theme_change(self):
+        try:
+            self.viewer.events.theme.connect(
+                self._set_center_panel_background_after_theme_change
+            )
+        except Exception:
+            pass
+            
         
     def main(self):
 
         self.viewer = napari.Viewer()
         # self.viewer = napari.Viewer(show_welcome=False)
-        self.viewer.theme = 'dark'
+        self.viewer.theme = 'system'
         
         # Change the window icon (shown in title bar and taskbar)
         # app_icon = QtGui.QIcon('logo.ico')  # Can be .ico, .png, etc
@@ -2159,39 +2249,43 @@ class CYTOSTUDIO:
         QtWidgets.QApplication.setWindowIcon(app_icon)
 
         # Optional: Change the window title while we're at it
-        self.viewer.window._qt_window.setWindowTitle("cyto-studio (0.2.27)")
+        self.viewer.window._qt_window.setWindowTitle("cyto-studio (1.0.0)")
 
         # Find the welcome widget
         for widget in self.viewer.window._qt_window.findChildren(QtWidgets.QWidget):
             if widget.__class__.__name__ == 'QtWelcomeWidget':
-                # Make the welcome widget itself transparent
-                widget.setAutoFillBackground(False)
-                widget.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+                widget.setAutoFillBackground(True)
+                widget.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
 
                 # Find all child widgets and make them transparent
                 for child in widget.findChildren(QtWidgets.QWidget):
                     child.setAutoFillBackground(False)
-                    child.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+                    child.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
                     
                 # Find and modify the label
                 for child in widget.findChildren(QtWidgets.QLabel):
                     if child.__class__.__name__ == 'QtWelcomeLabel':
                         child.setAutoFillBackground(False)
-                        child.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-                        child.setText("")
-                        child.hide()
-                        child.setStyleSheet("color: #ffffff; background: transparent;")
+                        child.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
+                        child.setText("Cyto Studio")
+                        child.setAlignment(QtCore.Qt.AlignCenter)
+                        child.setStyleSheet(
+                            "color: #ffffff; background: transparent;"
+                            "font-size: 28px; font-weight: 600;")
+                        child.show()
                     elif child.text() == "Ctrl+O open image(s)":
                         # Remove or hide the "Ctrl+O open image(s)" label
                         child.setText("")
                         # Alternatively, to hide the label completely:
                         child.hide()
+                    else:
+                        child.setStyleSheet("color: #ffffff; background: transparent;")
 
                     # Find and modify logo/image if it exists
                     if 'logo' in child.objectName().lower():
                         child.setAutoFillBackground(False)
-                        child.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-                        logo_path = os.path.join(os.path.dirname(cyto_studio.__file__), "logo.png")
+                        child.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
+                        logo_path = os.path.join(os.path.dirname(cyto_studio.__file__), "icon.png")
                         child.setPixmap(QtGui.QPixmap(logo_path))
                         child.setStyleSheet("color: #ffffff; background: transparent;")
         
@@ -2218,6 +2312,8 @@ class CYTOSTUDIO:
 
         # Apply the combined stylesheet
         self.viewer.window._qt_window.setStyleSheet(new_stylesheet)
+        self._set_center_panel_background()
+        self._keep_center_panel_background_on_theme_change()
 
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout()
@@ -2780,10 +2876,6 @@ class CYTOSTUDIO:
         
         # Create and add the legend widget
         self.legend_widget = LegendWidget()
-        self.legend_widget.setAutoFillBackground(True)
-        p = self.legend_widget.palette()
-        p.setColor(self.legend_widget.backgroundRole(), Qt.red)
-        self.legend_widget.setPalette(p)
         
         dw4 = self.viewer.window.add_dock_widget(self.legend_widget, area='right')
         dw4.setWindowTitle('Legend')

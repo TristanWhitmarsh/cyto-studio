@@ -1,16 +1,6 @@
 """Setup script for cyto-studio"""
 import os.path
-import subprocess
-import pkg_resources
 from setuptools import setup, find_packages
-
-# Uninstall opencv-python if it's installed
-try:
-    dist = pkg_resources.get_distribution("opencv-python")
-    print("Uninstalling opencv-python to avoid Qt conflicts...")
-    subprocess.check_call(["pip", "uninstall", "-y", "opencv-python"])
-except pkg_resources.DistributionNotFound:
-    pass
 
 # The directory containing this file
 HERE = os.path.abspath(os.path.dirname(__file__))
@@ -25,7 +15,7 @@ with open(os.path.join(HERE, "README.md")) as fid:
 # This call to setup() does all the work
 setup(
     name="cyto_studio",
-    version="0.2.27",
+    version="1.0.0",
     description="napari viewer which can read multiplex images as zarr files",
     long_description=README,
     long_description_content_type="text/markdown",
@@ -40,22 +30,31 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     package_data={
-        "cyto_studio": ["custom.qss", "icon.png", "logo.png"],
+        "cyto_studio": ["custom.qss", "icon.png", "icon.png"],
     },
     install_requires=[
-        'napari[pyside2]==0.5.6',
-        'PySide2==5.15.2.1',
-        'xarray==2023.4.2',
-        'zarr==2.14.2',
-        'SimpleITK==2.2.1',
-        'napari-animation==0.0.8',
-        'tifffile==2023.4.12',
-        'pyarrow==19.0.1',
+        # Modernized stack (Route A): Python >=3.11, Qt6/PySide6, zarr v3.
+        # This allows reading both the legacy STPT zarr-v2 datasets (via xarray,
+        # which reads v2 through zarr 3) and the new SpatialData (OME-NGFF zarr-v3)
+        # datasets via the spatialdata library.
+        'napari==0.5.6',
+        'PySide6>=6.5',
+        'xarray>=2024.1.0',
+        'zarr>=3.0.0',
+        'SimpleITK>=2.3.1',
+        'napari-animation',
+        'tifffile',
+        'pyarrow',
         'opencv-python-headless>=4.5.1.48',
-        'numpy==1.23.5',
-        'pydantic==1.10.15',
-        'geopandas==1.0.1',
+        'numpy>=2.0.0',
+        'geopandas>=1.0.1',
+        'spatialdata>=0.5.0',
+        # Some deps in the spatialdata tree (e.g. xarray-schema) still import
+        # pkg_resources, which setuptools>=81 no longer ships. Keep a setuptools
+        # that still provides it.
+        'setuptools<81',
     ],
+    python_requires=">=3.11",
     entry_points={
         "console_scripts": ["cyto-studio=cyto_studio.__main__:main"]
     },

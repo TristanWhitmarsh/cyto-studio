@@ -19,8 +19,8 @@ import math
 import SimpleITK as sitk
 import pandas as pd
 import cv2
-from PySide2.QtCore import QTimer
-from PySide2.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea,
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea,
                                QComboBox, QCheckBox, QListWidget, QListWidgetItem, QMessageBox, QFileDialog, QMainWindow)
 
 class Data:
@@ -61,32 +61,45 @@ class Data:
             viewer.layers.remove('bounding box')
 
         
+        from .spatialdata_reader import is_spatialdata, SpatialDataReader
+
+        # A SpatialData store is the selected folder itself (no '/mos' subfolder).
+        sd_store = os.path.join(image_folder, str(comboBoxPath))
+        self.is_sd = is_spatialdata(sd_store)
+
         file_name = image_folder + str(comboBoxPath) + '/mos'
         default_contrast_limits = [0,30000]
         thresholdN.setText("1000")
         channels_start = 0
-        if not os.path.exists(file_name):
+        if not self.is_sd and not os.path.exists(file_name):
             file_name = image_folder + str(comboBoxPath) + '/mos.zarr'
             default_contrast_limits = [0,30]
             thresholdN.setText("0.3")
             channels_start = 1
-        if not os.path.exists(file_name):
+        if not self.is_sd and not os.path.exists(file_name):
             file_name = image_folder + str(comboBoxPath) + '/'
             default_contrast_limits = [0,30000]
             thresholdN.setText("1000")
             channels_start = 0
-            
+
         print(file_name)
 
-        self.ds1 = xr.open_zarr(file_name)
-        self.ds2 = xr.open_zarr(file_name, group='l.2')
-        self.ds4 = xr.open_zarr(file_name, group='l.4')
-        self.ds8 = xr.open_zarr(file_name, group='l.8')
-        self.ds16 = xr.open_zarr(file_name, group='l.16')
-        self.ds32 = xr.open_zarr(file_name, group='l.32')
+        if self.is_sd:
+            self.sd = SpatialDataReader(sd_store)
+        else:
+            self.ds1 = xr.open_zarr(file_name)
+            self.ds2 = xr.open_zarr(file_name, group='l.2')
+            self.ds4 = xr.open_zarr(file_name, group='l.4')
+            self.ds8 = xr.open_zarr(file_name, group='l.8')
+            self.ds16 = xr.open_zarr(file_name, group='l.16')
+            self.ds32 = xr.open_zarr(file_name, group='l.32')
 
         # Get number of sections
-        if axio:
+        if self.is_sd:
+            number_of_sections = self.sd.number_of_sections
+            self.optical_slices_available = 1
+            print(f"Number of sections (spatialdata): {number_of_sections}")
+        elif axio:
             number_of_sections = len(list(self.ds1))
             self.optical_slices_available = 1
             print(f"Number of sections1: {number_of_sections}")
@@ -118,8 +131,11 @@ class Data:
         print(f"optical slices available: {self.optical_slices_available}")
 
 
-        channel_names = self.ds1.coords['channel'].values.tolist()
-        channel_names = [str(name) if isinstance(name, int) else name for name in channel_names]
+        if self.is_sd:
+            channel_names = self.sd.channel_names
+        else:
+            channel_names = self.ds1.coords['channel'].values.tolist()
+            channel_names = [str(name) if isinstance(name, int) else name for name in channel_names]
         print(f"channel_names: {channel_names}")
 
 
@@ -131,7 +147,15 @@ class Data:
         if load_even:
             z = 1
   
-        if old_method:
+        if self.is_sd:
+            bscale = 1
+            bzero = 0
+            self.slice_names = self.sd.sections
+            if z >= len(self.slice_names):
+                z = len(self.slice_names) - 1
+                scroll.setValue(z + 1)
+            slice_name = self.slice_names[z]
+        elif old_method:
             #Old method
             bscale = self.ds1.attrs['bscale']
             bzero = self.ds1.attrs['bzero']
@@ -152,24 +176,27 @@ class Data:
                 bscale = 1
                 bzero = 0
             slice_name = f"S{(z+1):03d}"
-                
-        try:
-            self.slice_names = list(self.ds1.keys())
-            print(self.slice_names)
-            slice_name = self.slice_names[z]
-            
+
+        if not self.is_sd:
             try:
-                bscale = self.ds1[slice_name].attrs['bscale']
-                bzero = self.ds1[slice_name].attrs['bzero']
+                self.slice_names = list(self.ds1.keys())
+                print(self.slice_names)
+                slice_name = self.slice_names[z]
+
+                try:
+                    bscale = self.ds1[slice_name].attrs['bscale']
+                    bzero = self.ds1[slice_name].attrs['bzero']
+                except:
+                    pass
             except:
                 pass
-        except:
-            pass
 
         print("slice_name: " + slice_name)
         
         # Read the image spacing
-        if self.old_method:
+        if self.is_sd:
+            self.spacing = [self.sd.spacing[0], self.sd.spacing[1]]
+        elif self.old_method:
             self.spacing = (self.ds1['S001'].attrs['scale'])
         else:
             self.spacing = [1,1]
@@ -206,32 +233,39 @@ class Data:
                 #print("loading")
 
 
-                try:
-                    im1 = (self.ds1[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                    im2 = (self.ds2[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                    im4 = (self.ds4[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                    im8 = (self.ds8[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                    im16 = (self.ds16[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                    im32 = (self.ds32[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                except:
+                if self.is_sd:
+                    # SpatialData is already multiscale (scale0/1/2); hand napari the pyramid.
+                    ms = self.sd.multiscale_planes(slice_name, chn)
+                    im_small = ms[-1]
+                else:
                     try:
-                        im1 = (self.ds1[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        im2 = (self.ds2[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        im4 = (self.ds4[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        im8 = (self.ds8[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        im16 = (self.ds16[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        im32 = (self.ds32[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                        im1 = (self.ds1[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                        im2 = (self.ds2[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                        im4 = (self.ds4[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                        im8 = (self.ds8[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                        im16 = (self.ds16[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                        im32 = (self.ds32[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
                     except:
                         try:
-                            im1 = (self.ds1[slice_name].data[chn] * bscale + bzero).squeeze()
-                            im2 = (self.ds2[slice_name].data[chn] * bscale + bzero).squeeze()
-                            im4 = (self.ds4[slice_name].data[chn] * bscale + bzero).squeeze()
-                            im8 = (self.ds8[slice_name].data[chn] * bscale + bzero).squeeze()
-                            im16 = (self.ds16[slice_name].data[chn] * bscale + bzero).squeeze()
-                            im32 = (self.ds32[slice_name].data[chn] * bscale + bzero).squeeze()
+                            im1 = (self.ds1[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                            im2 = (self.ds2[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                            im4 = (self.ds4[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                            im8 = (self.ds8[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                            im16 = (self.ds16[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
+                            im32 = (self.ds32[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
                         except:
-                            print("skipping this channel since it can't be read")
-                            continue
+                            try:
+                                im1 = (self.ds1[slice_name].data[chn] * bscale + bzero).squeeze()
+                                im2 = (self.ds2[slice_name].data[chn] * bscale + bzero).squeeze()
+                                im4 = (self.ds4[slice_name].data[chn] * bscale + bzero).squeeze()
+                                im8 = (self.ds8[slice_name].data[chn] * bscale + bzero).squeeze()
+                                im16 = (self.ds16[slice_name].data[chn] * bscale + bzero).squeeze()
+                                im32 = (self.ds32[slice_name].data[chn] * bscale + bzero).squeeze()
+                            except:
+                                print("skipping this channel since it can't be read")
+                                continue
+                    ms = [im1, im2, im4, im8, im16, im32]
+                    im_small = im32
 
 
                 if chn+color_number_offset == 0:
@@ -283,10 +317,10 @@ class Data:
                 #     viewer.layers.remove(channel_name)
 
 
-                min_value2 = im32.min().compute()
+                min_value2 = im_small.min().compute()
                 #if min_value2 < 0:
                 #    min_value2 = 0
-                max_value2 = im32.max().compute()
+                max_value2 = im_small.max().compute()
                 
                 if min_value2 < min_value:
                     min_value = min_value2
@@ -309,7 +343,7 @@ class Data:
                 else:
                     contrast_limits = [0,30000*overall_brightness]
 
-                layerC1 = viewer.add_image([im1, im2, im4, im8, im16, im32], multiscale=True,
+                layerC1 = viewer.add_image(ms, multiscale=True,
                                       name=str(channel_name), blending='additive', colormap=color_map, contrast_limits=contrast_limits, scale=self.spacing)
 
 
@@ -468,81 +502,95 @@ class Data:
             print(f"folder location: " + image_folder)
             
         
+        from .spatialdata_reader import is_spatialdata, SpatialDataReader
+
+        # A SpatialData store is the selected folder itself (no '/mos' subfolder).
+        sd_store = os.path.join(image_folder, str(comboBoxPath))
+        self.is_sd = is_spatialdata(sd_store)
+
         file_name = image_folder + str(comboBoxPath) + '/mos'
         default_contrast_limits = [0,30000]
         thresholdN.setText("1000")
         channels_start = 0
-        if not os.path.exists(file_name):
+        if not self.is_sd and not os.path.exists(file_name):
             file_name = image_folder + str(comboBoxPath) + '/mos.zarr'
             default_contrast_limits = [0,30]
             thresholdN.setText("0.3")
             channels_start = 1
 
-        # Try to read only the meta data using the consolidated flag as True
-        # Currently not used
-        try:
-            self.ds1 = xr.open_zarr(file_name, consolidated=False)
-            # print("not trying consolidated")
-        except Exception:
-            print("none-consolidated")
-            self.ds1 = xr.open_zarr(file_name)
+        if self.is_sd:
+            self.sd = SpatialDataReader(sd_store)
+        else:
+            # Try to read only the meta data using the consolidated flag as True
+            # Currently not used
+            try:
+                self.ds1 = xr.open_zarr(file_name, consolidated=False)
+                # print("not trying consolidated")
+            except Exception:
+                print("none-consolidated")
+                self.ds1 = xr.open_zarr(file_name)
             
             
             
-        channel_names = self.ds1.coords['channel'].values.tolist()
+        if self.is_sd:
+            channel_names = self.sd.channel_names
+        else:
+            channel_names = self.ds1.coords['channel'].values.tolist()
         if verbose:
             print(f"channel_names: {channel_names}")
         
         
 
-        # Initialize spacing with default zeros
-        self.spacing = [0, 0, 0]
+        if self.is_sd:
+            # SpatialData: physical pixel size (microns) from raw_meta, [x, y, z]
+            self.spacing = [self.sd.spacing[0], self.sd.spacing[1], 1]
+        else:
+            # Initialize spacing with default zeros
+            self.spacing = [0, 0, 0]
 
-        # Find available slice keys that start with 'S'
-        available_slices = [key for key in self.ds1.data_vars.keys() if key.startswith("S")]
+            # Find available slice keys that start with 'S'
+            available_slices = [key for key in self.ds1.data_vars.keys() if key.startswith("S")]
 
-        if available_slices:
-            # Sort the slices lexicographically to get the first one (or you can choose a different ordering)
-            available_slices.sort()
-            first_slice = available_slices[0]
-            if verbose:
-                print(f"Using first available slice: {first_slice}")
-            try:
-                scale_info = json.loads(self.ds1[first_slice].attrs['scale'])
-                self.spacing[0] = float(scale_info["x"])
-                self.spacing[1] = float(scale_info["y"])
-                self.spacing[2] = float(scale_info["z"])
-            except:
+            if available_slices:
+                # Sort the slices lexicographically to get the first one (or you can choose a different ordering)
+                available_slices.sort()
+                first_slice = available_slices[0]
+                if verbose:
+                    print(f"Using first available slice: {first_slice}")
                 try:
-                    self.spacing = 0.1*(self.ds1[first_slice].attrs['scale'])
+                    scale_info = json.loads(self.ds1[first_slice].attrs['scale'])
+                    self.spacing[0] = float(scale_info["x"])
+                    self.spacing[1] = float(scale_info["y"])
+                    self.spacing[2] = float(scale_info["z"])
                 except:
                     try:
-                        self.spacing[0] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][0])
-                        self.spacing[1] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][1])
-                        self.spacing[2] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][2])
+                        self.spacing = 0.1*(self.ds1[first_slice].attrs['scale'])
                     except:
-                        print("No slice available; using default spacing.")
-                        self.spacing = [1, 1, 1]
-        else:
-            print("No slice available; using default spacing.")
-            self.spacing = [1, 1, 1]
-            
-            
-            
-        # Read the image spacing
-        if self.old_method:
-            self.spacing = (self.ds1['S001'].attrs['scale'])
-        else:
-            self.spacing = [1,1]
-            try:
-                self.spacing[0] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][0])
-                self.spacing[1] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][1])
-            except:
+                        try:
+                            self.spacing[0] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][0])
+                            self.spacing[1] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][1])
+                            self.spacing[2] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][2])
+                        except:
+                            print("No slice available; using default spacing.")
+                            self.spacing = [1, 1, 1]
+            else:
+                print("No slice available; using default spacing.")
+                self.spacing = [1, 1, 1]
+
+            # Read the image spacing
+            if self.old_method:
+                self.spacing = (self.ds1['S001'].attrs['scale'])
+            else:
+                self.spacing = [1,1]
                 try:
-                    self.spacing[0] = float(json.loads(self.ds1['S001'].attrs['scale'])["x"])
-                    self.spacing[1] = float(json.loads(self.ds1['S001'].attrs['scale'])["y"])
+                    self.spacing[0] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][0])
+                    self.spacing[1] = float(json.loads(self.ds1.attrs['multiscale'])['metadata']['scale'][1])
                 except:
-                    print("spacing not defined")
+                    try:
+                        self.spacing[0] = float(json.loads(self.ds1['S001'].attrs['scale'])["x"])
+                        self.spacing[1] = float(json.loads(self.ds1['S001'].attrs['scale'])["y"])
+                    except:
+                        print("spacing not defined")
 
             
             
@@ -550,7 +598,11 @@ class Data:
             print(f"spacing ({self.spacing[0]}, {self.spacing[1]})")
 
         # Read the parameters to convert the voxel values (bscale and bzero)
-        if self.old_method:
+        if self.is_sd:
+            # SpatialData is already calibrated int16; no rescaling needed.
+            self.bscale = 1
+            self.bzero = 0
+        elif self.old_method:
             self.bscale = self.ds1.attrs['bscale']
             self.bzero = self.ds1.attrs['bzero']
         else:
@@ -566,11 +618,10 @@ class Data:
 
 
         # Get number of sections
-        if axio:
+        if self.is_sd:
+            self.number_of_sections = self.sd.number_of_sections
+        else:
             self.number_of_sections = len(list(self.ds1))
-
-        
-        self.number_of_sections = len(list(self.ds1))
         if verbose:
             print(f"Number of sections: {self.number_of_sections}")
             
@@ -603,42 +654,49 @@ class Data:
 
 
         # Calculate at which resolution the image should be read based on the image spacing and output pixel size
-        resolution = 32
-        index = 5
-        if (output_resolution / 0.5) < 32:
-            resolution = 16
-            index = 4
-        if (output_resolution / 0.5) < 16:
-            resolution = 8
-            index = 3
-        if (output_resolution / 0.5) < 8:
-            resolution = 4
-            index = 2
-        if (output_resolution / 0.5) < 4:
-            resolution = 2
-            index = 1
-        if (output_resolution / 0.5) < 2:
-            resolution = 1
-            index = 0
+        scale_key = None
+        if self.is_sd:
+            # SpatialData: choose a pyramid level (scale0/1/...) from the reader.
+            scale_key, resolution = self.sd.level_for(output_resolution)
+            if verbose:
+                print(f"loading spatialdata level {scale_key} (downsample factor {resolution})")
+        else:
+            resolution = 32
+            index = 5
+            if (output_resolution / 0.5) < 32:
+                resolution = 16
+                index = 4
+            if (output_resolution / 0.5) < 16:
+                resolution = 8
+                index = 3
+            if (output_resolution / 0.5) < 8:
+                resolution = 4
+                index = 2
+            if (output_resolution / 0.5) < 4:
+                resolution = 2
+                index = 1
+            if (output_resolution / 0.5) < 2:
+                resolution = 1
+                index = 0
 
-        if verbose:
-            print(f"loading at resolution {resolution} with index {index}")
-        
-        try:
-            gr = self.ds1.attrs["multiscale"]['datasets'][index]['path']
-            ds = xr.open_zarr(file_name, group=gr)
-        except:
+            if verbose:
+                print(f"loading at resolution {resolution} with index {index}")
+
             try:
-                gr = json.loads(self.ds1.attrs["multiscale"])['datasets'][index]['path']
+                gr = self.ds1.attrs["multiscale"]['datasets'][index]['path']
                 ds = xr.open_zarr(file_name, group=gr)
             except:
                 try:
-                    ds = xr.open_zarr(file_name, group='l.{0:d}'.format(resolution))
+                    gr = json.loads(self.ds1.attrs["multiscale"])['datasets'][index]['path']
+                    ds = xr.open_zarr(file_name, group=gr)
                 except:
-                    print("could not read") 
-                
+                    try:
+                        ds = xr.open_zarr(file_name, group='l.{0:d}'.format(resolution))
+                    except:
+                        print("could not read")
+
         # Get the number of optical slices that are available
-        if axio:
+        if self.is_sd or axio:
             self.optical_slices_available = 1
         else:
             self.optical_slices_available = len(ds.z)
@@ -780,13 +838,19 @@ class Data:
 
 
         example_slice_name = self.slice_names[0]
-        if example_slice_name not in ds:
+        if self.is_sd:
+            shape_y, shape_x = self.sd.plane_shape(scale_key)
+            have_shape = True
+        elif example_slice_name not in ds:
             print(f"Can't find slice {example_slice_name} for memory estimate.")
+            have_shape = False
         else:
             dummy_slice = ds[example_slice_name]
             shape_y = dummy_slice.sizes["y"]
             shape_x = dummy_slice.sizes["x"]
+            have_shape = True
 
+        if have_shape:
             bytes_per_voxel = 4  # float32
             voxels_in_one_slice = shape_y * shape_x
             estimated_slice_gb = (voxels_in_one_slice * bytes_per_voxel) / (1024 ** 3)
@@ -797,7 +861,7 @@ class Data:
 
             # Warn if a single slice is, say, > 5GB
             if estimated_slice_gb > 1:
-                from PySide2.QtWidgets import QMessageBox
+                from PySide6.QtWidgets import QMessageBox
                 msg_box = QMessageBox()
                 msg_box.setIcon(QMessageBox.Warning)
                 msg_box.setWindowTitle("High Memory Warning")
@@ -807,7 +871,7 @@ class Data:
                 )
 
                 msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
-                response = msg_box.exec_()
+                response = msg_box.exec()
 
                 # 🪄 This ensures the dialog is closed and UI is updated before proceeding
                 QApplication.processEvents()
@@ -845,60 +909,68 @@ class Data:
 
                             slice_name = f"S{(section):03d}"
                             
-                            if slice_name not in ds:
-                                if verbose:
-                                    print(f"Slice {slice_name} not found, skipping.")
-                                continue
-                                
-                            da = ds[slice_name]
-                            is_dataarray = hasattr(da, "dims") and hasattr(da, "coords")
-
-                            if is_dataarray:
-                                # --- named selection: works regardless of axis order ---
-                                if "type" in da.coords:
-                                    try:
-                                        da = da.sel(type="mosaic")
-                                    except Exception:
-                                        pass
-
-                                if "z" in da.dims:
-                                    nz = da.sizes["z"]
-                                    z_pos = optical_slice - 1   # optical_slice is 1-based; isel is 0-based
-                                    da = da.isel(z=min(max(z_pos, 0), nz - 1))
-
-                                if "channel" in da.dims:
-                                    if "channel" in da.coords and chn in list(da["channel"].values):
-                                        da = da.sel(channel=chn)
-                                    else:
-                                        da = da.isel(channel=min(chn, da.sizes["channel"] - 1))
-
-                                slice_data = (da.data * self.bscale + self.bzero).squeeze()
-
-                                if slice_data.ndim == 4:
-                                    slice_data = slice_data[:, 1, :, :] if axio else slice_data[0]
-                                elif slice_data.ndim == 3 and axio:
-                                    slice_data = slice_data[1]
-                                if slice_data.ndim != 2:
-                                    slice_data = slice_data[0]   # NOT chn — channel already selected
-
+                            if self.is_sd:
+                                # --- SpatialData: read one 2D (y, x) plane ---
+                                if slice_name not in self.sd.sections:
+                                    if verbose:
+                                        print(f"Slice {slice_name} not found, skipping.")
+                                    continue
+                                slice_data = self.sd.get_plane(slice_name, chn, scale_key)
                             else:
-                                # --- legacy path: no named dims, keep the exact old positional logic ---
-                                try:
-                                    slice_data = (ds[slice_name].sel(type="mosaic", z=optical_slice).data * self.bscale + self.bzero).squeeze()
-                                except Exception:
+                                if slice_name not in ds:
+                                    if verbose:
+                                        print(f"Slice {slice_name} not found, skipping.")
+                                    continue
+
+                                da = ds[slice_name]
+                                is_dataarray = hasattr(da, "dims") and hasattr(da, "coords")
+
+                                if is_dataarray:
+                                    # --- named selection: works regardless of axis order ---
+                                    if "type" in da.coords:
+                                        try:
+                                            da = da.sel(type="mosaic")
+                                        except Exception:
+                                            pass
+
+                                    if "z" in da.dims:
+                                        nz = da.sizes["z"]
+                                        z_pos = optical_slice - 1   # optical_slice is 1-based; isel is 0-based
+                                        da = da.isel(z=min(max(z_pos, 0), nz - 1))
+
+                                    if "channel" in da.dims:
+                                        if "channel" in da.coords and chn in list(da["channel"].values):
+                                            da = da.sel(channel=chn)
+                                        else:
+                                            da = da.isel(channel=min(chn, da.sizes["channel"] - 1))
+
+                                    slice_data = (da.data * self.bscale + self.bzero).squeeze()
+
+                                    if slice_data.ndim == 4:
+                                        slice_data = slice_data[:, 1, :, :] if axio else slice_data[0]
+                                    elif slice_data.ndim == 3 and axio:
+                                        slice_data = slice_data[1]
+                                    if slice_data.ndim != 2:
+                                        slice_data = slice_data[0]   # NOT chn — channel already selected
+
+                                else:
+                                    # --- legacy path: no named dims, keep the exact old positional logic ---
                                     try:
-                                        slice_data = (ds[slice_name].sel(z=optical_slice).data * self.bscale + self.bzero).squeeze()
+                                        slice_data = (ds[slice_name].sel(type="mosaic", z=optical_slice).data * self.bscale + self.bzero).squeeze()
                                     except Exception:
                                         try:
-                                            slice_data = (ds[slice_name].data * self.bscale + self.bzero).squeeze()
+                                            slice_data = (ds[slice_name].sel(z=optical_slice).data * self.bscale + self.bzero).squeeze()
                                         except Exception:
-                                            print("skipping this channel since it can't be read")
-                                            continue
+                                            try:
+                                                slice_data = (ds[slice_name].data * self.bscale + self.bzero).squeeze()
+                                            except Exception:
+                                                print("skipping this channel since it can't be read")
+                                                continue
 
-                                if slice_data.ndim == 4:
-                                    slice_data = slice_data[:, 1, :, :] if axio else slice_data[0]
-                                if slice_data.ndim != 2:
-                                    slice_data = slice_data[chn]
+                                    if slice_data.ndim == 4:
+                                        slice_data = slice_data[:, 1, :, :] if axio else slice_data[0]
+                                    if slice_data.ndim != 2:
+                                        slice_data = slice_data[chn]
                                 
                                 
 #                             try:
@@ -1068,7 +1140,7 @@ class Data:
                                             "Do you want to continue loading the volume?"
                                         )
                                         msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
-                                        response = msg_box.exec_()
+                                        response = msg_box.exec()
                                         
                                         # 🪄 This ensures the dialog is closed and UI is updated before proceeding
                                         QApplication.processEvents()
