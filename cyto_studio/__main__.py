@@ -159,18 +159,19 @@ echo "[cyto-studio] Python: $(command -v python)"
 echo "[cyto-studio] Environment: $CONDA_PREFIX"
 
 if command -v vglrun >/dev/null 2>&1; then
-    echo "[cyto-studio] Trying VirtualGL launch: vglrun python -m cyto_studio"
-    vglrun python -m cyto_studio "$@"
-    vgl_status=$?
+    echo "[cyto-studio] Checking VirtualGL: vglrun true"
+    vglrun true >/dev/null 2>&1
+    vgl_check_status=$?
 
-    if [ "$vgl_status" -eq 0 ]; then
-        exit 0
+    if [ "$vgl_check_status" -eq 0 ]; then
+        echo "[cyto-studio] Launching with VirtualGL: vglrun python -m cyto_studio"
+        vglrun python -m cyto_studio "$@"
+        vgl_status=$?
+        pause_on_error "$vgl_status"
     fi
 
-    echo
-    echo "[cyto-studio] VirtualGL launch failed with code: $vgl_status"
-    echo "[cyto-studio] Falling back to normal launch: python -m cyto_studio"
-    echo
+    echo "[cyto-studio] VirtualGL check failed with code: $vgl_check_status"
+    echo "[cyto-studio] Launching without VirtualGL: python -m cyto_studio"
 else
     echo "[cyto-studio] vglrun not found; launching without VirtualGL"
 fi
