@@ -1,19 +1,33 @@
 import sys
 import os
+import platform
 from importlib.metadata import distribution, PackageNotFoundError
+
+
+LINUX_CONDA_SH = "/opt/conda/etc/profile.d/conda.sh"
+LINUX_CONDA_ENV = "/storage/scratch.space/envs/cyto-studio-env"
 
 
 def create_launcher() -> int:
     try:
+        if platform.system() == "Windows":
+            print("[cyto-studio] Windows launcher creation is not supported here yet.")
+            print("[cyto-studio] Run Cyto Studio from an activated environment with:")
+            print("    python -m cyto_studio")
+            return 1
+
+        if platform.system() != "Linux":
+            print(f"[cyto-studio] Launcher creation is not supported on {platform.system()} yet.")
+            return 1
+
         home = os.path.expanduser("~")
-        venv_activate_path = os.path.join(home, "Python", "cyto-studio", "bin", "activate")
         script_path = os.path.join(home, ".local", "bin", "launch_cyto_studio.sh")
         desktop_path = os.path.join(home, "Desktop", "CytoStudio.desktop")
 
         print("[cyto-studio] Creating launcher...")
 
-        if not os.path.exists(venv_activate_path):
-            print(f"[cyto-studio] Virtualenv not found at: {venv_activate_path}")
+        if not os.path.exists(LINUX_CONDA_SH):
+            print(f"[cyto-studio] Conda setup script not found at: {LINUX_CONDA_SH}")
             return 1
 
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
@@ -38,36 +52,59 @@ pause_on_error() {{
     exit "$status"
 }}
 
-source "{venv_activate_path}"
+source "{LINUX_CONDA_SH}"
+conda activate "{LINUX_CONDA_ENV}"
 
 # Avoid Qt/C++ ABI conflicts from the host environment
 unset LD_LIBRARY_PATH
 unset QT_PLUGIN_PATH
 unset QML2_IMPORT_PATH
+unset QT_QPA_PLATFORM_PLUGIN_PATH
 export QT_API=pyside6
+if [ "${{QT_DEBUG_PLUGINS:-}}" != "1" ]; then
+    export QT_LOGGING_RULES="${{QT_LOGGING_RULES:-*.debug=false}}"
+fi
 
 # If you need NVIDIA libs for vglrun, add them back explicitly:
 export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 
 # Ensure PySide6's Qt libs are found first
-PYSIDE_LIB_PATH=$(python -c "import site, os; print(os.path.join(site.getsitepackages()[0], 'PySide6', 'Qt', 'lib'))")
-export LD_LIBRARY_PATH="$PYSIDE_LIB_PATH:$LD_LIBRARY_PATH"
+PYSIDE_LIB_PATH=$(python - <<'PY'
+import os
+import site
+for site_dir in site.getsitepackages():
+    candidate = os.path.join(site_dir, "PySide6", "Qt", "lib")
+    if os.path.isdir(candidate):
+        print(candidate)
+        break
+PY
+)
 
-echo "[cyto-studio] Trying VirtualGL launch: vglrun cyto-studio"
-
-vglrun cyto-studio "$@"
-vgl_status=$?
-
-if [ "$vgl_status" -eq 0 ]; then
-    exit 0
+if [ -n "$PYSIDE_LIB_PATH" ]; then
+    export LD_LIBRARY_PATH="$PYSIDE_LIB_PATH:$LD_LIBRARY_PATH"
 fi
 
-echo
-echo "[cyto-studio] VirtualGL launch failed with code: $vgl_status"
-echo "[cyto-studio] Falling back to normal launch: cyto-studio"
-echo
+echo "[cyto-studio] Python: $(command -v python)"
+echo "[cyto-studio] Environment: $CONDA_PREFIX"
 
-cyto-studio "$@"
+if command -v vglrun >/dev/null 2>&1; then
+    echo "[cyto-studio] Trying VirtualGL launch: vglrun python -m cyto_studio"
+    vglrun python -m cyto_studio "$@"
+    vgl_status=$?
+
+    if [ "$vgl_status" -eq 0 ]; then
+        exit 0
+    fi
+
+    echo
+    echo "[cyto-studio] VirtualGL launch failed with code: $vgl_status"
+    echo "[cyto-studio] Falling back to normal launch: python -m cyto_studio"
+    echo
+else
+    echo "[cyto-studio] vglrun not found; launching without VirtualGL"
+fi
+
+python -m cyto_studio "$@"
 cyto_status=$?
 
 pause_on_error "$cyto_status"
@@ -90,7 +127,7 @@ Version=1.0
 Type=Application
 Name=Cyto Studio
 Comment=Launch Cyto Studio Viewer
-Exec=x-terminal-emulator -e bash -c "{script_path}"
+Exec=bash -lc "{script_path}"
 Icon={icon_path}
 Terminal=true
 """)

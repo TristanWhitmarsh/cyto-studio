@@ -3,8 +3,9 @@ cyto-studio reads zarr files and displays them
 """
 
 import os
-os.environ.setdefault("QT_API", "pyside2")
-os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false"
+os.environ.setdefault("QT_API", "pyside6")
+if os.environ.get("QT_DEBUG_PLUGINS") != "1":
+    os.environ.setdefault("QT_LOGGING_RULES", "*.debug=false")
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="cyto_studio")
 import sys
