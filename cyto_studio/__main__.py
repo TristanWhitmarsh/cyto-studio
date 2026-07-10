@@ -1,11 +1,59 @@
 import sys
 import os
 import platform
+import shutil
+import subprocess
 from importlib.metadata import distribution, PackageNotFoundError
 
 
 LINUX_CONDA_SH = "/opt/conda/etc/profile.d/conda.sh"
 LINUX_CONDA_ENV = "/storage/scratch.space/envs/cyto-studio-env"
+
+
+def _linux_xcb_cursor_available() -> bool:
+    prefix = os.environ.get("CONDA_PREFIX", LINUX_CONDA_ENV)
+    for lib_name in ("libxcb-cursor.so.0", "libxcb-cursor.so"):
+        if os.path.exists(os.path.join(prefix, "lib", lib_name)):
+            return True
+
+    try:
+        import ctypes
+        ctypes.CDLL("libxcb-cursor.so.0")
+        return True
+    except OSError:
+        return False
+
+
+def _ensure_linux_qt_runtime() -> bool:
+    if _linux_xcb_cursor_available():
+        return True
+
+    conda = shutil.which("conda")
+    if not conda:
+        print("[cyto-studio] Missing Qt runtime library: libxcb-cursor.so.0")
+        print("[cyto-studio] Install it with:")
+        print("    conda install -y -c conda-forge xcb-util-cursor")
+        return False
+
+    print("[cyto-studio] Installing missing Qt runtime package: xcb-util-cursor")
+    try:
+        subprocess.check_call([
+            conda,
+            "install",
+            "-y",
+            "-p",
+            LINUX_CONDA_ENV,
+            "-c",
+            "conda-forge",
+            "xcb-util-cursor",
+        ])
+    except subprocess.CalledProcessError:
+        print("[cyto-studio] Failed to install xcb-util-cursor.")
+        print("[cyto-studio] Install it manually with:")
+        print("    conda install -y -c conda-forge xcb-util-cursor")
+        return False
+
+    return _linux_xcb_cursor_available()
 
 
 def create_launcher() -> int:
@@ -29,6 +77,8 @@ def create_launcher() -> int:
         if not os.path.exists(LINUX_CONDA_SH):
             print(f"[cyto-studio] Conda setup script not found at: {LINUX_CONDA_SH}")
             return 1
+
+        _ensure_linux_qt_runtime()
 
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
         os.makedirs(os.path.dirname(desktop_path), exist_ok=True)
@@ -65,8 +115,8 @@ if [ "${{QT_DEBUG_PLUGINS:-}}" != "1" ]; then
     export QT_LOGGING_RULES="${{QT_LOGGING_RULES:-*.debug=false}}"
 fi
 
-# If you need NVIDIA libs for vglrun, add them back explicitly:
-export LD_LIBRARY_PATH="/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
+# Keep conda's Qt/XCB runtime libraries available, then add NVIDIA libs for vglrun.
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 
 # Ensure PySide6's Qt libs are found first
 PYSIDE_LIB_PATH=$(python - <<'PY'
@@ -82,6 +132,27 @@ PY
 
 if [ -n "$PYSIDE_LIB_PATH" ]; then
     export LD_LIBRARY_PATH="$PYSIDE_LIB_PATH:$LD_LIBRARY_PATH"
+fi
+
+python - <<'PY'
+import ctypes
+import sys
+try:
+    ctypes.CDLL("libxcb-cursor.so.0")
+except OSError:
+    sys.exit(1)
+PY
+
+if [ "$?" -ne 0 ]; then
+    echo "[cyto-studio] Installing missing Qt runtime package: xcb-util-cursor"
+    conda install -y -p "{LINUX_CONDA_ENV}" -c conda-forge xcb-util-cursor
+    install_status=$?
+    if [ "$install_status" -ne 0 ]; then
+        echo "[cyto-studio] Could not install xcb-util-cursor automatically."
+        echo "[cyto-studio] Run this command in the cyto-studio environment:"
+        echo "    conda install -y -c conda-forge xcb-util-cursor"
+        pause_on_error "$install_status"
+    fi
 fi
 
 echo "[cyto-studio] Python: $(command -v python)"

@@ -36,19 +36,22 @@ Create the shared conda environment:
     >source /opt/conda/etc/profile.d/conda.sh
     >conda create -y -p /storage/scratch.space/envs/cyto-studio-env python=3.11
     >conda activate /storage/scratch.space/envs/cyto-studio-env
-    >pip install cyto-studio --upgrade
+    >conda install -y -c conda-forge xcb-util-cursor
+    >PIP_REQUIRE_VIRTUALENV=false python -m pip install cyto-studio --upgrade
 
 If installing from a local checkout instead:
 
     >cd /path/to/cyto-studio
-    >pip install -e .
+    >PIP_REQUIRE_VIRTUALENV=false python -m pip install -e .
 
 Create or refresh the desktop launcher:
 
     >python -m cyto_studio --create-launcher
 
 The launcher activates `/storage/scratch.space/envs/cyto-studio-env` and starts
-Cyto Studio with the Qt/PySide6 environment isolated from the host system.
+Cyto Studio with the Qt/PySide6 environment isolated from the host system. It
+also checks for the Qt/XCB runtime package needed by PySide6 and installs it if
+it is missing.
     
 ## Create the launcher
 
