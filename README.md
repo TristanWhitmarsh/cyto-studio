@@ -31,6 +31,12 @@ Type:
 
 ## University Server / Darkroom Setup
 
+If the shared environment already exists, create the launch button with:
+
+    >source /opt/conda/etc/profile.d/conda.sh
+    >conda activate /storage/scratch.space/envs/cyto-studio-env
+    >python -m cyto_studio --create-launcher
+
 Create the shared conda environment:
 
     >source /opt/conda/etc/profile.d/conda.sh
