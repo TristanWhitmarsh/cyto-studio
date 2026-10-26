@@ -898,6 +898,20 @@ class CYTOSTUDIO:
             # Coalesce rapid wheel/key changes; dragging commits only on release.
             self._slice_load_timer.start()
 
+    def load_slice_from_text(self):
+        try:
+            value = int(self.image_slice.text().strip())
+        except ValueError:
+            self.image_slice.setText(str(self.scroll.value()))
+            return
+        value = max(self.scroll.minimum(), min(value, self.scroll.maximum()))
+        self.scroll.setValue(value)
+        self.image_slice.setText(str(value))
+        if self.loaded_2D and not self.ignore_gui_call:
+            # Enter commits immediately, cancelling the scrollbar's queued update.
+            self._slice_load_timer.stop()
+            self._load_image_slice()
+
     def _load_image_slice(self):
         if not self.loaded_2D:
             return
@@ -2228,7 +2242,7 @@ class CYTOSTUDIO:
         QtWidgets.QApplication.setWindowIcon(app_icon)
 
         # Optional: Change the window title while we're at it
-        self.viewer.window._qt_window.setWindowTitle("cyto-studio (1.0.2)")
+        self.viewer.window._qt_window.setWindowTitle("cyto-studio (1.0.3)")
 
         # Find the welcome widget
         for widget in self.viewer.window._qt_window.findChildren(QtWidgets.QWidget):
@@ -2673,6 +2687,7 @@ class CYTOSTUDIO:
 
         self.image_slice = QtWidgets.QLineEdit("1")
         self.image_slice.setMaximumWidth(30)
+        self.image_slice.returnPressed.connect(self.load_slice_from_text)
         self.scroll.sliderMoved.connect(lambda value: self.image_slice.setText(str(value)))
         hbox.addWidget(self.image_slice)
 

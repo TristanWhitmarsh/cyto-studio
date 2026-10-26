@@ -8,7 +8,7 @@ import xarray as xr
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLineEdit, QScrollBar
 
@@ -49,6 +49,46 @@ class SliceNavigationTests(unittest.TestCase):
         state.ignore_gui_call = True
         CYTOSTUDIO.set_image_slice_value(state)
         state._slice_load_timer.start.assert_not_called()
+
+    def test_enter_loads_typed_slice_once_and_updates_scrollbar(self):
+        scroll = QScrollBar()
+        scroll.setRange(1, 100)
+        timer = QTimer(scroll)
+        timer.setSingleShot(True)
+        timer.setInterval(120)
+        state = SimpleNamespace(scroll=scroll, image_slice=QLineEdit(),
+                                loaded_2D=True, ignore_gui_call=False,
+                                _slice_load_timer=timer, _load_image_slice=Mock())
+        scroll.valueChanged.connect(lambda: CYTOSTUDIO.set_image_slice_value(state))
+        timer.timeout.connect(state._load_image_slice)
+        state.image_slice.returnPressed.connect(lambda: CYTOSTUDIO.load_slice_from_text(state))
+        state.image_slice.setText('42')
+        QTest.keyClick(state.image_slice, Qt.Key_Return)
+        self.assertEqual(scroll.value(), 42)
+        self.assertEqual(state.image_slice.text(), '42')
+        state._load_image_slice.assert_called_once_with()
+        self.assertFalse(timer.isActive())
+        QTest.qWait(200)
+        state._load_image_slice.assert_called_once_with()
+
+    def test_typed_slice_is_clamped_and_invalid_text_is_restored(self):
+        scroll = QScrollBar()
+        scroll.setRange(1, 100)
+        state = SimpleNamespace(scroll=scroll, image_slice=QLineEdit(),
+                                loaded_2D=True, ignore_gui_call=False,
+                                _slice_load_timer=Mock(), _load_image_slice=Mock())
+        for text, expected in (('999', 100), ('0', 1), ('-4', 1), (' 8 ', 8)):
+            with self.subTest(text=text):
+                state.image_slice.setText(text)
+                CYTOSTUDIO.load_slice_from_text(state)
+                self.assertEqual(scroll.value(), expected)
+                self.assertEqual(state.image_slice.text(), str(expected))
+        state._load_image_slice.reset_mock()
+        for text in ('', 'abc', '1.5'):
+            state.image_slice.setText(text)
+            CYTOSTUDIO.load_slice_from_text(state)
+            self.assertEqual(state.image_slice.text(), '8')
+        state._load_image_slice.assert_not_called()
 
     def test_odd_and_even_navigation_updates_only_selected_channels(self):
         for odd, even, expected_section in ((False, False, 'S002'),
