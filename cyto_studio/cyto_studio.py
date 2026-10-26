@@ -73,14 +73,16 @@ try:
     from .my_widgets import CheckableItemWidget
     from .my_widgets import CustomComboBox
     from .my_widgets import LegendWidget
-    from .utilities import parse_channel_input
+    from .utilities import parse_channel_input, safe_contrast_limits
+    from .image_pyramid import multiscale_planes
     from .data import Data 
 except ImportError:
     from my_widgets import ExtendedComboBox
     from my_widgets import CheckableItemWidget
     from my_widgets import CustomComboBox
     from my_widgets import LegendWidget#, StardistWidget
-    from utilities import parse_channel_input
+    from utilities import parse_channel_input, safe_contrast_limits
+    from image_pyramid import multiscale_planes
     from data import Data
     
 # import dask
@@ -891,16 +893,17 @@ class CYTOSTUDIO:
         self.viewer.reset_view()
 
     def set_image_slice_value(self):
-        import gc
+        self.image_slice.setText(str(self.scroll.value()))
+        if self.loaded_2D and not self.ignore_gui_call:
+            # Coalesce rapid wheel/key changes; dragging commits only on release.
+            self._slice_load_timer.start()
+
+    def _load_image_slice(self):
         if not self.loaded_2D:
             return
         if self.ignore_gui_call:
             return
         
-        # setup_memory_status_bar(self.viewer)
-        # self.viewer.window._qt_viewer.canvas.native.deleteLater()
-        # self.viewer.window._qt_viewer.canvas.native.repaint()
-
         self.image_slice.setText(str(self.scroll.value()))
         
         
@@ -950,8 +953,8 @@ class CYTOSTUDIO:
                 slice_name = self.slice_names[z]
 
                 try:
-                    bscale = self.data.ds1[slice_name].attrs['bscale']
-                    bzero = self.data.ds1[slice_name].attrs['bzero']
+                    self.bscale = self.data.ds1[slice_name].attrs['bscale']
+                    self.bzero = self.data.ds1[slice_name].attrs['bzero']
                 except:
                     pass
             except:
@@ -966,50 +969,22 @@ class CYTOSTUDIO:
                     # SpatialData: swap in the pyramid for the newly scrolled section.
                     new_data = self.data.sd.multiscale_planes(slice_name, chn)
                     layer = self.viewer.layers[str(channel_name)]
-                    layer.events.block()
                     layer.data = new_data
-                    layer.events.unblock()
                     del new_data
                     continue
                 try:
-                    # Prepare Dask/xarray objects, do not convert to NumPy!
-                    im1 = (self.data.ds1[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                    im2 = (self.data.ds2[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                    im4 = (self.data.ds4[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                    im8 = (self.data.ds8[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                    im16 = (self.data.ds16[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                    im32 = (self.data.ds32[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                except Exception:
-                    try:
-                        im1 = (self.data.ds1[slice_name].sel(z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                        im2 = (self.data.ds2[slice_name].sel(z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                        im4 = (self.data.ds4[slice_name].sel(z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                        im8 = (self.data.ds8[slice_name].sel(z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                        im16 = (self.data.ds16[slice_name].sel(z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                        im32 = (self.data.ds32[slice_name].sel(z=optical_slice).data[chn] * self.bscale + self.bzero).squeeze()
-                    except Exception:
-                        try:
-                            im1 = (self.data.ds1[slice_name].data[chn] * self.bscale + self.bzero).squeeze()
-                            im2 = (self.data.ds2[slice_name].data[chn] * self.bscale + self.bzero).squeeze()
-                            im4 = (self.data.ds4[slice_name].data[chn] * self.bscale + self.bzero).squeeze()
-                            im8 = (self.data.ds8[slice_name].data[chn] * self.bscale + self.bzero).squeeze()
-                            im16 = (self.data.ds16[slice_name].data[chn] * self.bscale + self.bzero).squeeze()
-                            im32 = (self.data.ds32[slice_name].data[chn] * self.bscale + self.bzero).squeeze()
-                        except Exception:
-                            continue  # Skip this channel if all attempts fail
-
-                # This list is still Dask/xarray objects
-                new_data = [im1, im2, im4, im8, im16, im32]
+                    new_data = multiscale_planes(
+                        [self.data.ds1, self.data.ds2, self.data.ds4,
+                         self.data.ds8, self.data.ds16, self.data.ds32],
+                        slice_name, chn, optical_slice, self.bscale, self.bzero,
+                    )
+                except (KeyError, IndexError, ValueError):
+                    continue  # Skip channels that are absent from this section.
 
                 # Update the layer's data in-place (let napari handle lazy loading)
                 layer = self.viewer.layers[str(channel_name)]
-                layer.events.block()
                 layer.data = new_data
-                layer.events.unblock()
 
-                # Clean up intermediates and collect garbage
-                del im1, im2, im4, im8, im16, im32, new_data
-                # gc.collect()
 
     def Remove_Regions(self, use_size):
 
@@ -1977,7 +1952,7 @@ class CYTOSTUDIO:
             self.overall_brightness = 0.5 * number_of_channels * (1.0001 - (float(self.scroll_overall_brightness.value()) / 1000))
         
         contrast_limits = self.default_contrast_limits
-        contrast_limits = [self.value_range[0],self.value_range[1]*self.overall_brightness]
+        contrast_limits = safe_contrast_limits(self.value_range, self.overall_brightness)
         for layer in self.viewer.layers:
             layer.contrast_limits = contrast_limits
 
@@ -2024,7 +1999,7 @@ class CYTOSTUDIO:
 
 
     def OnLoad2D(self):
-        
+        self._slice_load_timer.stop()
         self.loaded_2D = True
         self.loaded_3D = False
         
@@ -2042,7 +2017,10 @@ class CYTOSTUDIO:
         load_even = self.cb_Even_slice.isChecked()
         load_odd = self.cb_Odd_slice.isChecked()
         
-        self.optical_slices_available, self.value_range, self.number_of_sections, channel_names, colors = self.data.Load2D(self.viewer, self.image_folder, self.comboBoxPath.currentText(), self.selected_channels, self.default_contrast_limits, self.thresholdN, self.channels_start, self.axio, self.old_method, self.overall_brightness, self.scroll, self.scroll_overall_brightness, load_odd, load_even)
+        # Resetting the scrollbar during loading must not queue another slice read.
+        with QtCore.QSignalBlocker(self.scroll):
+            self.optical_slices_available, self.value_range, self.number_of_sections, channel_names, colors = self.data.Load2D(self.viewer, self.image_folder, self.comboBoxPath.currentText(), self.selected_channels, self.default_contrast_limits, self.thresholdN, self.channels_start, self.axio, self.old_method, self.overall_brightness, self.scroll, self.scroll_overall_brightness, load_odd, load_even)
+        self.image_slice.setText(str(self.scroll.value()))
 
         number_of_channels = len(self.selected_channels)
         
@@ -2054,7 +2032,7 @@ class CYTOSTUDIO:
             self.overall_brightness = 0.5 * number_of_channels * (1.0001 - (float(self.scroll_overall_brightness.value()) / 1000))
         
         contrast_limits = self.default_contrast_limits
-        contrast_limits = [self.value_range[0],self.value_range[1]*self.overall_brightness]
+        contrast_limits = safe_contrast_limits(self.value_range, self.overall_brightness)
         for layer in self.viewer.layers:
             layer.contrast_limits = contrast_limits
             
@@ -2152,7 +2130,7 @@ class CYTOSTUDIO:
             self.overall_brightness = 0.5 * number_of_channels * (1.0001 - (float(self.scroll_overall_brightness.value()) / 1000))
         
         contrast_limits = self.default_contrast_limits
-        contrast_limits = [self.value_range[0],self.value_range[1]*self.overall_brightness]
+        contrast_limits = safe_contrast_limits(self.value_range, self.overall_brightness)
         for layer in self.viewer.layers:
             layer.contrast_limits = contrast_limits
             
@@ -2177,9 +2155,9 @@ class CYTOSTUDIO:
       
     
     def on_scroll_released(self):
-        import gc
+        # Retain explicit collection to limit memory growth during slice browsing.
         gc.collect()
-            
+
     def _set_center_panel_background(self):
         """Keep only the napari image canvas and startup panel black."""
         try:
@@ -2250,7 +2228,7 @@ class CYTOSTUDIO:
         QtWidgets.QApplication.setWindowIcon(app_icon)
 
         # Optional: Change the window title while we're at it
-        self.viewer.window._qt_window.setWindowTitle("cyto-studio (1.0.1)")
+        self.viewer.window._qt_window.setWindowTitle("cyto-studio (1.0.2)")
 
         # Find the welcome widget
         for widget in self.viewer.window._qt_window.findChildren(QtWidgets.QWidget):
@@ -2630,7 +2608,6 @@ class CYTOSTUDIO:
         hbox.addStretch(1)
 
         vbox.addLayout(hbox)
-        vbox.addStretch(1)
         
         
         
@@ -2639,6 +2616,7 @@ class CYTOSTUDIO:
         groupbox = QtWidgets.QGroupBox("3D")
         groupbox.setCheckable(False)
         groupbox.setLayout(vbox)
+        groupbox.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
         layout.addWidget(groupbox)
         
         
@@ -2684,12 +2662,18 @@ class CYTOSTUDIO:
         self.scroll.setOrientation(QtCore.Qt.Horizontal)
         self.scroll.setRange(1, 100)
         self.scroll.setMinimumWidth(150)
+        self.scroll.setTracking(False)
+        self._slice_load_timer = QTimer(self.scroll)
+        self._slice_load_timer.setSingleShot(True)
+        self._slice_load_timer.setInterval(120)
+        self._slice_load_timer.timeout.connect(self._load_image_slice)
         self.scroll.valueChanged.connect(self.set_image_slice_value)
         self.scroll.sliderReleased.connect(self.on_scroll_released)
         hbox.addWidget(self.scroll)
 
         self.image_slice = QtWidgets.QLineEdit("1")
         self.image_slice.setMaximumWidth(30)
+        self.scroll.sliderMoved.connect(lambda value: self.image_slice.setText(str(value)))
         hbox.addWidget(self.image_slice)
 
         #hbox.addStretch(1)

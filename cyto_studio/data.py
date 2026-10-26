@@ -8,9 +8,11 @@ import psutil
 from math import ceil, floor
 
 try:
-    from .utilities import parse_channel_input
+    from .utilities import parse_channel_input, safe_contrast_limits
+    from .image_pyramid import multiscale_planes
 except ImportError:
-    from utilities import parse_channel_input
+    from utilities import parse_channel_input, safe_contrast_limits
+    from image_pyramid import multiscale_planes
 
 from napari.layers import Image
 import gc
@@ -239,34 +241,14 @@ class Data:
                     im_small = ms[-1]
                 else:
                     try:
-                        im1 = (self.ds1[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        im2 = (self.ds2[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        im4 = (self.ds4[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        im8 = (self.ds8[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        im16 = (self.ds16[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        im32 = (self.ds32[slice_name].sel(type='mosaic', z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                    except:
-                        try:
-                            im1 = (self.ds1[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                            im2 = (self.ds2[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                            im4 = (self.ds4[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                            im8 = (self.ds8[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                            im16 = (self.ds16[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                            im32 = (self.ds32[slice_name].sel(z=optical_slice).data[chn] * bscale + bzero).squeeze()
-                        except:
-                            try:
-                                im1 = (self.ds1[slice_name].data[chn] * bscale + bzero).squeeze()
-                                im2 = (self.ds2[slice_name].data[chn] * bscale + bzero).squeeze()
-                                im4 = (self.ds4[slice_name].data[chn] * bscale + bzero).squeeze()
-                                im8 = (self.ds8[slice_name].data[chn] * bscale + bzero).squeeze()
-                                im16 = (self.ds16[slice_name].data[chn] * bscale + bzero).squeeze()
-                                im32 = (self.ds32[slice_name].data[chn] * bscale + bzero).squeeze()
-                            except:
-                                print("skipping this channel since it can't be read")
-                                continue
-                    ms = [im1, im2, im4, im8, im16, im32]
-                    im_small = im32
-
+                        ms = multiscale_planes(
+                            [self.ds1, self.ds2, self.ds4, self.ds8, self.ds16, self.ds32],
+                            slice_name, chn, optical_slice, bscale, bzero,
+                        )
+                    except (KeyError, IndexError, ValueError):
+                        print("Skipping this channel since it can't be read")
+                        continue
+                    im_small = ms[-1]
 
                 if chn+color_number_offset == 0:
                     color_map = 'bop purple'
@@ -330,7 +312,7 @@ class Data:
                 self.value_range = [min_value, max_value]
                 
                 self.overall_brightness = number_of_channels * (1.01 - (float(scroll_overall_brightness.value()) / 1000))
-                contrast_limits = [self.value_range[0],self.value_range[1]*self.overall_brightness]
+                contrast_limits = safe_contrast_limits(self.value_range, self.overall_brightness)
 
                 
                 
@@ -343,6 +325,7 @@ class Data:
                 else:
                     contrast_limits = [0,30000*overall_brightness]
 
+                contrast_limits = safe_contrast_limits(contrast_limits)
                 layerC1 = viewer.add_image(ms, multiscale=True,
                                       name=str(channel_name), blending='additive', colormap=color_map, contrast_limits=contrast_limits, scale=self.spacing)
 
@@ -1224,7 +1207,9 @@ class Data:
                 self.value_range = [min_value, max_value]
                 
                 self.overall_brightness = number_of_channels * (1.01 - (float(scroll_overall_brightness.value()) / 1000))
-                contrast_limits = [self.value_range[0],self.value_range[1]*self.overall_brightness]
+                contrast_limits = safe_contrast_limits(self.value_range, self.overall_brightness)
+                if min_value == max_value == 0:
+                    print(f"Warning: channel {channel_name!r} contains only zeros after loading; displaying with safe contrast limits.")
                 
 
                 print(f"scale= {(float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution)}")
@@ -1236,4 +1221,3 @@ class Data:
 
         
         return self.optical_slices_available, self.value_range, self.shape, self.slice_spacing, self.optical_slices, output_resolution
-    
