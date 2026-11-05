@@ -1050,8 +1050,10 @@ class Data:
                                 slice_data = transformed_slice_data
 
 
-                            size_multiplier = (resolution*self.spacing[0])/output_resolution
-                            size2D = (int(size_multiplier*slice_data.shape[1]), int(size_multiplier*slice_data.shape[0]))
+                            # SimpleITK spacing is (x, y) = (spacing[1], spacing[0]); size the output
+                            # width and height with their own spacing (they differ for anisotropic pixels).
+                            size2D = (int(resolution*self.spacing[1]/output_resolution*slice_data.shape[1]),
+                                      int(resolution*self.spacing[0]/output_resolution*slice_data.shape[0]))
 
                             fixed = sitk.GetImageFromArray(slice_data)
                             fixed.SetOrigin((0, 0))

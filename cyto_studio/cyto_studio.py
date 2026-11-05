@@ -2250,7 +2250,7 @@ class CYTOSTUDIO:
         QtWidgets.QApplication.setWindowIcon(app_icon)
 
         # Optional: Change the window title while we're at it
-        self.viewer.window._qt_window.setWindowTitle("cyto-studio (1.0.0)")
+        self.viewer.window._qt_window.setWindowTitle("cyto-studio (1.0.1)")
 
         # Find the welcome widget
         for widget in self.viewer.window._qt_window.findChildren(QtWidgets.QWidget):
