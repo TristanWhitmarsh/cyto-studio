@@ -1,4 +1,7 @@
 import sys
+import faulthandler
+import shlex
+from pathlib import Path
 import os
 import platform
 import shutil
@@ -83,6 +86,12 @@ def create_launcher() -> int:
         os.makedirs(os.path.dirname(script_path), exist_ok=True)
         os.makedirs(os.path.dirname(desktop_path), exist_ok=True)
 
+        # A launcher created from a source checkout runs that checkout.
+        source = Path(__file__).resolve().parent.parent
+        source_setup = ""
+        if (source / "setup.py").is_file():
+            source_setup = f'export PYTHONPATH={shlex.quote(str(source))}' + '${PYTHONPATH:+:$PYTHONPATH}'
+
         # Write the shell script
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(f"""#!/bin/bash
@@ -158,25 +167,8 @@ fi
 echo "[cyto-studio] Python: $(command -v python)"
 echo "[cyto-studio] Environment: $CONDA_PREFIX"
 
-if command -v vglrun >/dev/null 2>&1; then
-    echo "[cyto-studio] Checking VirtualGL: vglrun true"
-    vglrun true >/dev/null 2>&1
-    vgl_check_status=$?
-
-    if [ "$vgl_check_status" -eq 0 ]; then
-        echo "[cyto-studio] Launching with VirtualGL: vglrun python -m cyto_studio"
-        vglrun python -m cyto_studio "$@"
-        vgl_status=$?
-        pause_on_error "$vgl_status"
-    fi
-
-    echo "[cyto-studio] VirtualGL check failed with code: $vgl_check_status"
-    echo "[cyto-studio] Launching without VirtualGL: python -m cyto_studio"
-else
-    echo "[cyto-studio] vglrun not found; launching without VirtualGL"
-fi
-
-python -m cyto_studio "$@"
+{source_setup}
+python -m cyto_studio --desktop-launch "$@"
 cyto_status=$?
 
 pause_on_error "$cyto_status"
@@ -218,6 +210,14 @@ def main() -> int:
     if "--create-launcher" in sys.argv:
         return create_launcher()
 
+    from cyto_studio.diagnostics import LOG_ENV, install_viewer_reporting, run_viewer
+
+    if LOG_ENV not in os.environ:
+        args = sys.argv[1:]
+        desktop = "--desktop-launch" in args
+        return run_viewer([arg for arg in args if arg != "--desktop-launch"], virtualgl=desktop)
+    faulthandler.enable()
+
     # Ensure Qt bindings resolve to PySide6 (Qt6) before napari/qtpy import.
     os.environ.setdefault("QT_API", "pyside6")
 
@@ -251,7 +251,9 @@ def main() -> int:
 
     print("Using PySide6")
     napari = CYTOSTUDIO()
+    reporter = install_viewer_reporting()
     napari.main()
+    del reporter
     return 0
 
 

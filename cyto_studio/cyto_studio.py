@@ -10,6 +10,7 @@ import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="cyto_studio")
 import sys
 import re
+from .telemetry import log_event, connect_viewer_activity
 import napari
 from napari._qt.widgets import qt_dims_slider
 import cyto_studio
@@ -734,6 +735,7 @@ class CYTOSTUDIO:
 
 
     def LoadInRegion(self, text):
+        log_event("Action: Reload in shape")
         
         zoom   = self.viewer.camera.zoom
         angles = self.viewer.camera.angles
@@ -814,6 +816,7 @@ class CYTOSTUDIO:
         # viewer.reset_view(margin=0.1, reset_camera_angle=False)
 
     def CropToRegion(self):
+        log_event("Action: Crop to shape")
 
         if any(i.name == 'bounding box' for i in self.viewer.layers):
             self.viewer.layers.remove('bounding box')
@@ -918,6 +921,7 @@ class CYTOSTUDIO:
         if self.ignore_gui_call:
             return
         
+        log_event(f"2D slice requested: {self.scroll.value()}")
         self.image_slice.setText(str(self.scroll.value()))
         
         
@@ -1332,6 +1336,7 @@ class CYTOSTUDIO:
 
             
     def LoadVolume(self):
+        log_event("Action: Open volume file")
         widget = QtWidgets.QWidget()
         if sys.platform == 'linux':
             fname, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -1356,6 +1361,7 @@ class CYTOSTUDIO:
                       blending='additive', colormap='gray', contrast_limits=self.default_contrast_limits)
     
     def LoadMask(self):
+        log_event("Action: Open mask file")
         widget = QtWidgets.QWidget()
         if sys.platform == 'linux':
             fname, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -1704,10 +1710,11 @@ class CYTOSTUDIO:
         elif self.cb_R_Merged.isChecked():
             self.old_method = False
             self.axio = False
-            self.image_folders = {
+            # Shared path also exposed through ~/Storage/scratch.space on the server.
+            self.image_folders = (
+                '/storage/scratch.space/data/stpt/merged/',
                 '/storage/imaxt/imaxt_zarr_merged/',
-                '/storage/scratch.space/data/stpt/merged/'
-            }
+            )
             print("setting Merged method")
         else:
             self.old_method = False
@@ -1727,18 +1734,24 @@ class CYTOSTUDIO:
 
         file_list = []
 
+        def directories(path):
+            try:
+                with os.scandir(path) as entries:
+                    yield from (entry.path for entry in entries
+                                if not entry.name.startswith('.') and entry.is_dir())
+            except FileNotFoundError:
+                return
+            except OSError as error:
+                log_event(f"Dataset search skipped {path!r}: {error}")
+
         for folder in self.image_folders:
             if sys.platform == 'linux':
-                self.search_folder = QtWidgets.QLineEdit(folder)
-                base_path = self.search_folder.text()
-                if os.path.exists(base_path):
-                    for f in os.scandir(base_path):
-                        if f.is_dir():
-                            file_list += self._check_zarr_folder(f.path, base_path)
-                            # One level deeper
-                            for sub in os.scandir(f.path):
-                                if sub.is_dir():
-                                    file_list += self._check_zarr_folder(sub.path, base_path)
+                for path in directories(folder):
+                    datasets = self._check_zarr_folder(path, folder)
+                    file_list.extend(datasets)
+                    if not datasets:
+                        for subfolder in directories(path):
+                            file_list.extend(self._check_zarr_folder(subfolder, folder))
             else:
                 self.search_folder = QtWidgets.QLineEdit('N:/stpt/')
 
@@ -2225,6 +2238,7 @@ class CYTOSTUDIO:
     def main(self):
 
         self.viewer = napari.Viewer()
+        self._activity_timer = connect_viewer_activity(self.viewer)
         # self.viewer = napari.Viewer(show_welcome=False)
         self.viewer.theme = 'system'
         
@@ -2242,7 +2256,7 @@ class CYTOSTUDIO:
         QtWidgets.QApplication.setWindowIcon(app_icon)
 
         # Optional: Change the window title while we're at it
-        self.viewer.window._qt_window.setWindowTitle("cyto-studio (1.0.6)")
+        self.viewer.window._qt_window.setWindowTitle("cyto-studio (1.0.8)")
 
         # Find the welcome widget
         for widget in self.viewer.window._qt_window.findChildren(QtWidgets.QWidget):
@@ -2318,22 +2332,22 @@ class CYTOSTUDIO:
 
         self.cb_R_Axio = QtWidgets.QRadioButton('AXIO')
         self.cb_R_Axio.setChecked(False)
-        self.cb_R_Axio.toggled.connect(self.MethodChanged)
+        self.cb_R_Axio.toggled.connect(lambda checked: checked and self.MethodChanged())
         hbox.addWidget(self.cb_R_Axio)
         
         self.cb_R_STPT = QtWidgets.QRadioButton('STPT')
         self.cb_R_STPT.setChecked(True)
-        self.cb_R_STPT.toggled.connect(self.MethodChanged)
+        self.cb_R_STPT.toggled.connect(lambda checked: checked and self.MethodChanged())
         hbox.addWidget(self.cb_R_STPT)
         
         self.cb_R_IMC= QtWidgets.QRadioButton('IMC')
         self.cb_R_IMC.setChecked(False)
-        self.cb_R_IMC.toggled.connect(self.MethodChanged)
+        self.cb_R_IMC.toggled.connect(lambda checked: checked and self.MethodChanged())
         hbox.addWidget(self.cb_R_IMC)
         
         self.cb_R_Merged= QtWidgets.QRadioButton('Merged')
         self.cb_R_Merged.setChecked(False)
-        self.cb_R_Merged.toggled.connect(self.MethodChanged)
+        self.cb_R_Merged.toggled.connect(lambda checked: checked and self.MethodChanged())
         hbox.addWidget(self.cb_R_Merged)
         
         

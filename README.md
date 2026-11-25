@@ -73,6 +73,18 @@ The cyto-studio viewer can be run from command line by typing:
     >cyto-studio
     
 
+The Linux desktop launcher starts the viewer through `vglrun` for GPU rendering.
+If VirtualGL cannot start, the launcher reports the failure.
+
+When Cyto Studio reports an error, click **Copy report** to copy a short
+excerpt for support, or click **Open log folder** and attach the full session
+log. A new log is saved for each launch, including viewer output and errors.
+On Linux, the default folder is `~/.local/state/cyto-studio/logs`.
+Reports can include local sample paths, loading options, recent camera and
+layer changes, renderer information, and sampled memory usage. NVIDIA memory
+readings are for the entire GPU, including other sessions on a shared server.
+An unexpected exit by signal is logged even when Python has no traceback.
+
 ## How to use
 
 1. If working within the IMAXT Windows VMware or Linux remote desktop, the Data folder containing the STPT images will have been automatically selected. If not, please select the location of the folders with STPT Zarr files using the "Set folder" button.

@@ -7,6 +7,8 @@ import json
 import psutil
 from math import ceil, floor
 
+from .telemetry import log_event
+
 try:
     from .utilities import parse_channel_input, safe_contrast_limits
     from .image_pyramid import multiscale_planes
@@ -52,7 +54,8 @@ class Data:
 
         
     def Load2D(self, viewer, image_folder, comboBoxPath, selected_channels, default_contrast_limits, thresholdN, channels_start, axio, old_method, overall_brightness, scroll, scroll_overall_brightness, load_odd, load_even):
-
+        log_event(f"Opening 2D sample {os.path.join(image_folder, str(comboBoxPath))!r}, "
+                  f"channels {selected_channels}, odd={load_odd}, even={load_even}")
         random.seed(42)
         
         color_number_offset = sum(isinstance(layer, Image) for layer in viewer.layers)
@@ -470,6 +473,11 @@ class Data:
     
 
     def Load3D(self, viewer, image_folder, comboBoxPath, selected_channels, default_contrast_limits, thresholdN, channels_start, axio, old_method, overall_brightness, scroll, scroll_overall_brightness, pixel_size, m_slice_spacing, start_slice, end_slice, crop, crop_start_x, crop_end_x, crop_start_y, crop_end_y, origin_x, origin_y, use_mask, load_odd, load_even):
+        log_event(f"Opening 3D sample {os.path.join(image_folder, str(comboBoxPath))!r}, "
+                  f"pixel size {pixel_size}, slices {start_slice}–{end_slice}, "
+                  f"channels {selected_channels}, crop "
+                  f"{(crop_start_x, crop_end_x, crop_start_y, crop_end_y) if crop else None}, "
+                  f"mask={use_mask}, odd={load_odd}, even={load_even}")
         random.seed(42)
         
         color_number_offset = sum(isinstance(layer, Image) for layer in viewer.layers)
@@ -1216,6 +1224,8 @@ class Data:
 
                 print(f"scale= {(float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution)}")
 
+                log_event(f"Submitting volume {channel_name!r} to renderer: "
+                          f"shape={volume_1_temp.shape}, dtype={volume_1_temp.dtype}")
                 viewer.add_image([volume_1_temp], name=channel_name, scale=(float(self.slice_spacing)/float(self.optical_slices), output_resolution, output_resolution), 
                                       blending='additive', colormap=color_map, contrast_limits=contrast_limits)
 
